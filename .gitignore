@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.egg-info/
+dist/
+build/
+
+# Large ingested CSVs — regenerated from gee.py
+data/output/chirpsv3/
+data/output/sentinel1/
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+
+# Junk from exploration phase
+docs-task1/
+docs-task2/
+task1/

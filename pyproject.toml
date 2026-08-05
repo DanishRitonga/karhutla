@@ -1,0 +1,14 @@
+[project]
+name = "datathon"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "earthengine-api>=1.7.38",
+    "geopandas>=1.1.4",
+    "matplotlib>=3.11.1",
+    "pandas>=3.0.5",
+    "pyogrio>=0.13.0",
+    "pyproj>=3.7.2",
+    "requests>=2.34.2",
+    "shapely>=2.1.2",
+]

@@ -1,0 +1,49 @@
+\begin{table}[h]
+\centering
+\caption{Physical role of each data source in peatland fire prediction.}
+\label{tab:dataset_role}
+\begin{tabular}{p{2.4cm} p{2.9cm} p{5.7cm}}
+\toprule
+\textbf{Dataset} & \textbf{Predictive role} & \textbf{Fire-relevant physical mechanism} \\
+\midrule
+FIRMS VIIRS 375~m
+    & Label (target)
+    & Thermal anomaly at 375~m resolution;
+      flaming and near-surface combustion.
+      Does \textit{not} detect subsurface smoldering. \\
+\addlinespace
+ERA5-Land
+    & Weather + soil moisture
+    & Temperature, humidity, and wind speed control evaporation and fire spread.
+      swvl1 (0--7~cm) and swvl2 (7--28~cm) provide modeled surface and shallow peat moisture
+      \textit{continuously} at daily resolution. \\
+\addlinespace
+CHIRPS v3 SAT
+    & Rainfall
+    & Cumulative rainfall deficit over 2--4 weeks dries the peat surface.
+      In equatorial Riau, temperature is near-constant year-round;
+      rainfall is the dominant seasonal driver. \\
+\addlinespace
+Sentinel-1 SAR
+    & Measured surface moisture + biomass
+    & C-band radar backscatter (VV/VH) penetrates clouds and smoke.
+      Wet soil returns stronger signal; dry peat returns weaker signal.
+      Directly \textit{measures} moisture, unlike ERA5 which \textit{models} it.
+      Sparse cadence (6--12~day) is the trade-off. \\
+\addlinespace
+Dynamic World
+    & Land cover probabilities
+    & 9 continuous class probabilities (trees, crops, bare, built, etc.)
+      from Sentinel-2 at 10~m.
+      Distinguishes fire-prone land covers (plantation, shrubland)
+      from non-flammable surfaces (water, built-up).
+      Cloud cover causes gaps during fire season. \\
+\addlinespace
+Peat depth\hfill (BRGM FEG 2019)
+    & Static vulnerability
+    & Peat thickness determines fire persistence:
+      deep peat ($>\!3$~m) can smolder for weeks underground and reignite surface fires.
+      Non-peat cells lack this mechanism entirely. \\
+\bottomrule
+\end{tabular}
+\end{table}
