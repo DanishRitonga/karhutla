@@ -1,0 +1,22 @@
+# virtual environments
+.venv/
+venv/
+
+# python cache
+__pycache__/
+*.pyc
+
+# data mentah & hasil generate (terlalu besar / bisa direproduksi ulang)
+grid/data/
+model/real_data/
+model/real_grid_data/
+model/outputs/
+*.zip
+
+# file besar sisa lama di root
+grid_definition (1).py
+fetch_peat.py
+
+# OS/editor
+.DS_Store
+Thumbs.db
