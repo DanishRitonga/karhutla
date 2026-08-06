@@ -5,17 +5,37 @@ venv/
 # python cache
 __pycache__/
 *.pyc
+*.pyo
 
 # data mentah & hasil generate (terlalu besar / bisa direproduksi ulang)
 grid/data/
 model/real_data/
 model/real_grid_data/
 model/outputs/
+data/output/chirpsv3/
+data/output/sentinel1/
 *.zip
 
 # file besar sisa lama di root
 grid_definition (1).py
 fetch_peat.py
+
+# build artifacts
+*.egg-info/
+dist/
+build/
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+
+# Junk from exploration phase
+docs-task1/
+docs-task2/
+task1/
 
 # OS/editor
 .DS_Store
