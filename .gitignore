@@ -7,9 +7,11 @@ __pycache__/
 dist/
 build/
 
-# Large ingested CSVs — regenerated from gee.py
+# Large ingested CSVs — regenerated from ingest scripts
 data/output/chirpsv3/
 data/output/sentinel1/
+data/output/sentinel1_filled/
+data/output/viirs/
 
 # LaTeX build artifacts
 *.aux
