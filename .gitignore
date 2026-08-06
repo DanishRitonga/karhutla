@@ -13,6 +13,10 @@ data/output/sentinel1/
 data/output/sentinel1_filled/
 data/output/viirs/
 
+# Raw VIIRS downloads (1.7 GB zips) + extracted FIRMS CSVs
+data/raw/
+real_data/
+
 # LaTeX build artifacts
 *.aux
 *.bbl
