@@ -101,8 +101,7 @@ def _spatial_join(detections, grid):
     det["cell_idx"] = cell_idx
     det = det[det["cell_idx"] >= 0]
     hits = det.groupby(["cell_idx", "date"]).size().reset_index(name="count")
-    riau = grid[grid["is_riau"]].reset_index(drop=True)
-    hits = hits[hits["cell_idx"].isin(riau["cell_idx"])]
+    hits = hits[hits["cell_idx"].isin(grid["cell_idx"])]
     return hits
 
 
@@ -209,9 +208,14 @@ def main():
     parser.add_argument("--keep-raw", action="store_true")
     parser.add_argument("--k", type=int, default=2)
     parser.add_argument("--window", type=int, default=7)
+    parser.add_argument("--land-only", action="store_true", default=True,
+                        help="label all land cells (CHIRPS-covered), not just Riau "
+                             "(default True)")
     parser.add_argument("--cache-dir", type=Path, default=Path("data/raw/viirs"))
     parser.add_argument("--out-dir", type=Path, default=Path("data/output/viirs"))
     parser.add_argument("--grid-csv", type=Path, default=Path("data/output/grid/grid_cells.csv"))
+    parser.add_argument("--land-cells", type=Path, default=None,
+                        help="CSV of land cell_idx (CHIRPS coverage used by default)")
     args = parser.parse_args()
 
     if args.year is not None:
@@ -225,7 +229,21 @@ def main():
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     grid = pd.read_csv(args.grid_csv)
-    riau_cells = grid[grid["is_riau"]]["cell_idx"].tolist()
+
+    # Target cells: all land cells (outside Riau included) or Riau only.
+    if args.land_only:
+        if args.land_cells is not None:
+            land = pd.read_csv(args.land_cells)
+            target_cells = land["cell_idx"].tolist()
+            logger.info("using %d land cells from %s", len(target_cells), args.land_cells)
+        else:
+            chirps_union = set()
+            for f in sorted(Path("data/output/chirpsv3").glob("chirps_v3sat_*.csv")):
+                chirps_union.update(pd.read_csv(f, usecols=["cell_idx"]).cell_idx.unique())
+            target_cells = sorted(chirps_union)
+            logger.info("land cells (CHIRPS union): %d", len(target_cells))
+    else:
+        target_cells = grid[grid["is_riau"]]["cell_idx"].tolist()
     riau_lookup = grid[["cell_idx", "row", "col"]].drop_duplicates()
 
     # Load all years: {year: hits_df}
@@ -240,7 +258,7 @@ def main():
         if yr + 1 in hits_by_year:
             yr_hits = pd.concat([yr_hits, hits_by_year[yr + 1]], ignore_index=True)
         all_dates = pd.date_range(f"{yr}-01-01", f"{yr}-12-31")
-        labels = _build_labels(yr_hits, all_dates, riau_cells, args.k, args.window)
+        labels = _build_labels(yr_hits, all_dates, target_cells, args.k, args.window)
 
         out_path = args.out_dir / f"labels_{yr}.csv"
         labels = labels.merge(riau_lookup, on="cell_idx", how="left")
