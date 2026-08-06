@@ -12,6 +12,8 @@ data/output/chirpsv3/
 data/output/sentinel1/
 data/output/sentinel1_filled/
 data/output/viirs/
+data/output/dynamic_world/
+data/output/era5land/
 
 # LaTeX build artifacts
 *.aux

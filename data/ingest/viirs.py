@@ -215,7 +215,7 @@ def main():
     parser.add_argument("--out-dir", type=Path, default=Path("data/output/viirs"))
     parser.add_argument("--grid-csv", type=Path, default=Path("data/output/grid/grid_cells.csv"))
     parser.add_argument("--land-cells", type=Path, default=None,
-                        help="CSV of land cell_idx (CHIRPS coverage used by default)")
+                        help="CSV of land cell_idx (coverage union used by default)")
     args = parser.parse_args()
 
     if args.year is not None:
@@ -237,11 +237,29 @@ def main():
             target_cells = land["cell_idx"].tolist()
             logger.info("using %d land cells from %s", len(target_cells), args.land_cells)
         else:
-            chirps_union = set()
-            for f in sorted(Path("data/output/chirpsv3").glob("chirps_v3sat_*.csv")):
-                chirps_union.update(pd.read_csv(f, usecols=["cell_idx"]).cell_idx.unique())
-            target_cells = sorted(chirps_union)
-            logger.info("land cells (CHIRPS union): %d", len(target_cells))
+            target_union = set()
+            coverage_paths = [
+                (Path("data/output/era5land"), "era5land_*.csv", "ERA5-Land"),
+                (Path("data/output/dynamic_world"), "dynamic_world_*.csv", "Dynamic World"),
+                (Path("data/output/chirpsv3"), "chirps_v3sat_*.csv", "CHIRPS"),
+            ]
+            source_name = "grid"
+            for base_dir, pattern, label in coverage_paths:
+                files = sorted(base_dir.glob(pattern))
+                if not files:
+                    continue
+                for f in files:
+                    target_union.update(pd.read_csv(f, usecols=["cell_idx"]).cell_idx.unique())
+                source_name = label
+                break
+
+            if target_union:
+                target_cells = sorted(target_union)
+                logger.info("land cells (%s union): %d", source_name, len(target_cells))
+            else:
+                # If no feature files exist yet, default to the full grid.
+                target_cells = sorted(grid["cell_idx"].unique())
+                logger.info("land cells (grid fallback): %d", len(target_cells))
     else:
         target_cells = grid[grid["is_riau"]]["cell_idx"].tolist()
     riau_lookup = grid[["cell_idx", "row", "col"]].drop_duplicates()
