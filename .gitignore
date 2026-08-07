@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.env
 
 # Large ingested CSVs — regenerated from ingest scripts
 data/output/chirpsv3/
