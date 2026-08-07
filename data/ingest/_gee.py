@@ -48,10 +48,16 @@ class GeeConfig:
     grid_meta: Path = Path("data/output/grid/grid_meta.json")
     chirps_dir: Path = Path("data/output/chirpsv3")
     s1_dir: Path = Path("data/output/sentinel1")
+    era5land_dir: Path = Path("data/output/era5land")
+    dynamic_world_dir: Path = Path("data/output/dynamic_world")
     chirps_scale: int = 5566
     s1_scale: int = 100
+    era5land_scale: int = 9000
+    dynamic_world_scale: int = 100
     chirps_chunk_days: int = 31
     s1_chunk_days: int = 45
+    era5land_chunk_days: int = 31
+    dynamic_world_chunk_days: int = 31
     feature_chunk_size: int = 2000
 
 

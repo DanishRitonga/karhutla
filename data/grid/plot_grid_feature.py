@@ -4,29 +4,35 @@ Produces a choropleth of one feature field (one date) on the same equal-area
 grid used by ``grid_definition.py`` and drawn in the style of ``riau_grid.png``
 (Albers projection, 5 km cells, boundary outline).
 
-Data sources (output of ``gee_ingest.py`` in ``grid/output/gee/``):
+Data sources (outputs of the ``data/ingest/*.py`` scripts):
 
-  * chirps_v3sat_YYYYMM.csv   -> cell_idx, row, col, date, precip_mm
-  * s1_{ORBIT}_YYYYMM.csv     -> cell_idx, row, col, date, vv_db, vh_db,
-                                 angle_deg, vh_vv_db
+  * chirps_v3sat_YYYYMM.csv       -> cell_idx, row, col, date, precip_mm
+  * s1_{ORBIT}_YYYYMM.csv         -> cell_idx, row, col, date, vv_db, vh_db,
+                                     angle_deg, vh_vv_db
+  * era5land_YYYYMM.csv           -> cell_idx, row, col, date, <8 bands>
+  * dynamic_world_YYYYMM.csv      -> cell_idx, row, col, date, <9 classes>,
+                                     top1_class, top1_prob
 
 Example calls (from the datathon project root):
 
-    uv run --python 3.12 python grid/scripts/plot_grid_feature.py \
+    uv run --python 3.12 python data/grid/plot_grid_feature.py \
         --source chirps --date 2019-01-15
 
-    uv run --python 3.12 python grid/scripts/plot_grid_feature.py \
+    uv run --python 3.12 python data/grid/plot_grid_feature.py \
         --source s1 --date 2019-01-10 --orbit ASCENDING --field vh_vv_db
 
-    uv run --python 3.12 python grid/scripts/plot_grid_feature.py \
-        --source chirps --date 2019-01-15 --riau-only
+    uv run --python 3.12 python data/grid/plot_grid_feature.py \
+        --source era5land --date 2019-01-15 --field total_precipitation
+
+    uv run --python 3.12 python data/grid/plot_grid_feature.py \
+        --source dynamic_world --date 2019-01-15 --field trees --riau-only
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -50,6 +56,36 @@ FIELD_META: dict[str, dict[str, tuple[str, str]]] = {
         "angle_deg": ("viridis", "deg"),
         "vh_vv_db": ("RdYlBu_r", "dB"),
     },
+    "era5land": {
+        "temperature_2m": ("coolwarm", "K"),
+        "dewpoint_temperature_2m": ("coolwarm", "K"),
+        "u_component_of_wind_10m": ("RdBu_r", "m/s"),
+        "v_component_of_wind_10m": ("RdBu_r", "m/s"),
+        "volumetric_soil_water_layer_1": ("YlGnBu", "m3/m3"),
+        "volumetric_soil_water_layer_2": ("YlGnBu", "m3/m3"),
+        "total_precipitation": ("YlGnBu", "m"),
+        "surface_solar_radiation_downwards": ("inferno", "J/m2"),
+    },
+    "dynamic_world": {
+        "water": ("Blues", "probability"),
+        "trees": ("Greens", "probability"),
+        "grass": ("YlGn", "probability"),
+        "flooded_vegetation": ("PuBuGn", "probability"),
+        "crops": ("YlOrBr", "probability"),
+        "shrub_and_scrub": ("cividis", "probability"),
+        "built": ("Reds", "probability"),
+        "bare": ("copper", "probability"),
+        "snow_and_ice": ("Purples", "probability"),
+        "top1_prob": ("viridis", "probability"),
+    },
+}
+
+# Per-source defaults when --field is omitted.
+DEFAULT_FIELD: dict[str, str] = {
+    "chirps": "precip_mm",
+    "s1": "vv_db",
+    "era5land": "temperature_2m",
+    "dynamic_world": "top1_prob",
 }
 
 
@@ -70,10 +106,12 @@ class FeaturePlotConfig:
     boundary_gpkg: Path = Path("data/output/grid/riau_boundary_aea.gpkg")
     chirps_dir: Path = Path("data/output/chirpsv3")
     s1_dir: Path = Path("data/output/sentinel1")
+    era5land_dir: Path = Path("data/output/era5land")
+    dynamic_world_dir: Path = Path("data/output/dynamic_world")
     out_dir: Path = Path("data/output/maps")
     dpi: int = 150
     # Percentiles used to clip the colour scale so a few outliers do not
-    # wash out the map. Ignored for angle (fixed 0..90).
+    # wash out the map. Ignored for dynamic_world (fixed 0..1) and angle.
     vmin_pct: float = 1.0
     vmax_pct: float = 99.0
 
@@ -100,10 +138,14 @@ class FeatureGridPlotter:
         while (y, m) <= (end.year, end.month):
             if cfg.source == "chirps":
                 months.append(cfg.chirps_dir / f"chirps_v3sat_{y:04d}{m:02d}.csv")
-            else:
+            elif cfg.source == "s1":
                 if cfg.orbit is None:
                     raise ValueError("--orbit is required for the s1 source")
                 months.append(cfg.s1_dir / f"s1_{cfg.orbit}_{y:04d}{m:02d}.csv")
+            elif cfg.source == "era5land":
+                months.append(cfg.era5land_dir / f"era5land_{y:04d}{m:02d}.csv")
+            else:
+                months.append(cfg.dynamic_world_dir / f"dynamic_world_{y:04d}{m:02d}.csv")
             m += 1
             if m == 13:
                 y, m = y + 1, 1
@@ -117,7 +159,10 @@ class FeatureGridPlotter:
         """
         cfg = self.config
         start = cfg.date - timedelta(days=cfg.window_days - 1)
-        frames = [pd.read_csv(p) for p in self._month_paths(start, cfg.date)]
+        month_paths = [p for p in self._month_paths(start, cfg.date) if p.exists()]
+        if not month_paths:
+            raise ValueError(f"No data files found for {start} .. {cfg.date}")
+        frames = [pd.read_csv(p) for p in month_paths]
         if not frames:
             raise ValueError(f"No data files found for {start} .. {cfg.date}")
         df = pd.concat(frames, ignore_index=True)
@@ -129,20 +174,19 @@ class FeatureGridPlotter:
                 f"No data in window {start} .. {cfg.date} "
                 f"(source={cfg.source}, orbit={cfg.orbit or '-'})"
             )
-        if cfg.source == "s1":
-            if cfg.field not in FIELD_META["s1"]:
-                raise ValueError(f"Unknown s1 field: {cfg.field}")
-            series = df.groupby("cell_idx")[cfg.field].median()
-        else:
-            series = df.groupby("cell_idx")["precip_mm"].median()
+        if cfg.field not in FIELD_META[cfg.source]:
+            raise ValueError(f"Unknown {cfg.source} field: {cfg.field}")
+        if cfg.field not in df.columns:
+            raise ValueError(f"Field '{cfg.field}' does not exist in loaded CSV data")
+        series = df.groupby("cell_idx")[cfg.field].median()
         return series.dropna()
 
     # -- rendering -------------------------------------------------------- #
 
     def _norm(self, values: pd.Series):
         cfg = self.config
-        if cfg.field == "angle_deg":
-            return Normalize(vmin=0, vmax=90)
+        if cfg.field == "angle_deg" or cfg.source == "dynamic_world":
+            return Normalize(vmin=0, vmax=1) if cfg.source == "dynamic_world" else Normalize(vmin=0, vmax=90)
         lo = np.percentile(values, cfg.vmin_pct)
         hi = np.percentile(values, cfg.vmax_pct)
         if cfg.source == "chirps":
@@ -207,22 +251,21 @@ def _parse_date(s: str) -> date:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot a GEE feature on the Riau grid")
-    parser.add_argument("--source", choices=["chirps", "s1"], required=True)
+    parser.add_argument(
+        "--source", choices=["chirps", "s1", "era5land", "dynamic_world"], required=True
+    )
     parser.add_argument("--date", type=_parse_date, required=True)
     parser.add_argument("--orbit", choices=["ASCENDING", "DESCENDING"], default=None)
-    parser.add_argument("--field", default=None, help="s1 field (default vv_db)")
+    parser.add_argument("--field", default=None, help="Feature field to render")
     parser.add_argument("--riau-only", action="store_true")
     parser.add_argument("--window", type=int, default=1,
                         help="days ending at --date to median-composite (default 1; use ~30 for full S1 coverage)")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
-    if args.source == "chirps":
-        field = "precip_mm"
-    else:
-        field = args.field or "vv_db"
-        if field not in FIELD_META["s1"]:
-            parser.error(f"--field must be one of {list(FIELD_META['s1'])}")
+    field = args.field or DEFAULT_FIELD[args.source]
+    if field not in FIELD_META[args.source]:
+        parser.error(f"--field must be one of {list(FIELD_META[args.source])}")
 
     config = FeaturePlotConfig(
         source=args.source,
