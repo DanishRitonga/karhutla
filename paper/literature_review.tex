@@ -1,0 +1,105 @@
+\documentclass{article}
+
+\usepackage{nips15submit_e,times}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{natbib}
+
+\title{Literature Review: Multimodal Spatiotemporal\\Prediction of Peatland Fire Hotspots in Riau}
+
+\author{
+Author \\
+\texttt{email@example.com}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This literature review surveys prior work on forest and peatland fire
+prediction using spatiotemporal deep learning and multimodal fusion. We
+identify three primary research gaps: (1) no systematic comparison between
+tabular and spatiotemporal approaches exists for peatland hotspot prediction
+in Indonesia, (2) multimodal fusion integrating satellite radar, weather,
+rainfall, land cover, and peat vulnerability maps has not been explored in a
+spatiotemporal framework, and (3) analysis of the relative contribution of
+environmental factors to fire risk using explainable AI remains limited for
+the Indonesian context.
+\end{abstract}
+
+\section{Literature Review}
+
+\subsection{Limitations of Optical and Thermal Satellite Detection}
+
+Conventional peatland fire detection relies on polar-orbiting satellites
+such as MODIS (Moderate Resolution Imaging Spectroradiometer) and VIIRS
+(Visible Infrared Imaging Radiometer Suite), which detect thermal anomalies
+on the Earth's surface. Although effective for large surface fires, this
+approach has three major limitations for peatland contexts.
+
+First, MODIS has a 1~km spatial resolution per pixel, too coarse to detect
+small-scale \emph{smoldering} fires common in the early stages of peat
+combustion~\cite{vanwees2022}. Second, persistent cloud cover in tropical
+regions, especially during fire season, causes many detections to be missed
+by optical satellites. Third, peat fires burning below the surface have
+substantially lower surface temperatures than open flames, frequently falling
+below the detection threshold of MODIS algorithms~\cite{whitburn2016}.
+Temporal hotspot patterns in Riau have been studied by~\cite{sitanggang2018},
+who identified correlations between hotspot sequences and peatland conditions,
+but that study did not integrate multimodal data. These limitations
+demonstrate that no single sensor modality can reliably predict peatland
+fires, motivating the need for a multimodal fusion approach.
+
+\subsection{Deep Learning Approaches for Fire Prediction}
+
+Advances in deep learning have opened new approaches for fire prediction
+beyond thermal anomaly detection. The Convolutional LSTM (ConvLSTM),
+introduced by~\cite{shi2015} for precipitation nowcasting, has become a
+foundational architecture for various spatiotemporal prediction tasks,
+including wildfire prediction.
+
+Several recent studies have demonstrated promising ConvLSTM performance for
+fire prediction.~\cite{masrur2024} developed an attention-based ConvLSTM to
+predict wildfire spread in the United States, showing that spatiotemporal
+deep learning significantly outperforms conventional Auto-Regressive Moving
+Average (ARIMA) models.~\cite{chakraa2026} accelerated fire spread prediction
+using ConvLSTM for operational guidance, achieving accurate forecasts at a
+fraction of the computational cost of physics-based simulations.
+
+For the multimodal setting,~\cite{papakis2025} proposed a multimodal ensemble
+deep learning framework combining satellite imagery, topographic data, and
+meteorological variables for fire prediction in Greece, achieving
+competitive accuracy against state-of-the-art methods.
+~\cite{mamun2026} developed a unified spatiotemporal deep learning framework
+integrating 3D CNN, LSTM, and MLP for probabilistic wildfire prediction in
+the Mediterranean region, attaining an AUC-ROC of 0.962.
+~\cite{sinato2026} developed a fire risk prediction system in Argentina using
+Dynamic World as a land cover source and FIRMS as validation labels, and won
+the NASA Space Apps Challenge 2025.
+
+\subsection{Multimodal Fusion for Environmental Prediction}
+
+Multimodal fusion has become increasingly popular in environmental prediction
+because it captures complementary signals from multiple physical sources. For
+peatland fires, spatiotemporal fusion of radar, weather, rainfall, and land
+cover data remains largely unexplored in the literature. In particular, the
+integration of cloud-penetrating radar for direct soil moisture measurement
+alongside continuous atmospheric reanalysis and land cover information has
+not been evaluated for Indonesia's peatlands~\cite{taufik2023}.
+
+\subsection{Research Gaps}
+
+Based on the literature surveyed above, several research gaps can be
+identified. First, no study has systematically compared tabular and
+spatiotemporal approaches for peatland hotspot prediction in Indonesia.
+Second, multimodal fusion integrating radar, weather, rainfall, land cover,
+and peat vulnerability maps has not been conducted in a spatiotemporal
+framework. Third, the relative contribution of environmental factors to
+peatland fire risk in Indonesia, analyzed through explainable AI methods,
+remains underexplored.
+
+\bibliographystyle{unsrt}
+\bibliography{references}
+
+\end{document}

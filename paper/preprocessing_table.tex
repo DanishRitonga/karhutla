@@ -1,0 +1,45 @@
+\begin{table}[h]
+\centering
+\caption{Data sources and preprocessing summary.}
+\label{tab:preprocessing}
+\begin{tabular}{p{2.4cm} p{2.8cm} p{2.8cm} p{3.0cm}}
+\toprule
+\textbf{Dataset} & \textbf{Native format} & \textbf{Grid assignment} & \textbf{Preprocessing} \\
+\midrule
+FIRMS VIIRS 375~m
+    & CSV point
+    & Spatial join $\to$ daily count per cell
+    & Confidence filter (nominal $\!+\!$ high);
+      $k=2$ persistence over 7-day target $\to$ binary label \\
+\addlinespace
+ERA5-Land
+    & NetCDF, hourly, 9~km
+    & Bilinear interpolation $\to$ 5~km
+    & Aggregate hourly $\to$ daily:
+      mean (t2m, d2m, u10, v10, swvl1, swvl2, ssr),
+      sum (tp) \\
+\addlinespace
+CHIRPS v3 SAT
+    & GeoTIFF, daily, 5~km
+    & Nearest-neighbor
+    & --- \\
+\addlinespace
+Sentinel-1 SAR
+    & GRD, 10~m, 6--12~day revisit
+    & Median VV/VH per cell
+    & Speckle filter; backscatter (dB);
+      forward-fill gaps $\leq 8$~days with binary availability mask \\
+\addlinespace
+Dynamic World
+    & GeoTIFF, 2--5~day, 10~m
+    & Mean probability per class per cell
+    & Exclude cloud-shadowed pixels; gap-fill missing days \\
+\addlinespace
+Peat depth\hfill (BRGM FEG 2019)
+    & Shapefile, static
+    & Rasterize to 5~km
+    & Parse numeric midpoint from string range
+      (e.g., ``1,5--2,0~m'' $\to$ 1.75~m) \\
+\bottomrule
+\end{tabular}
+\end{table}
