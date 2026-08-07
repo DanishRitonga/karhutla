@@ -28,3 +28,5 @@ real_data/
 docs-task1/
 docs-task2/
 task1/
+data/output/era5land/
+data/output/dynamic_world/

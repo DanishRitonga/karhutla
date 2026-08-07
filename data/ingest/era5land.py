@@ -181,7 +181,15 @@ class Era5LandIngester:
         self.config.era5land_dir.mkdir(parents=True, exist_ok=True)
         written = []
         for month_start, month_end in _iter_months(start, end):
-            df = self._pull(month_start, month_end)
+            try:
+                df = self._pull(month_start, month_end)
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "ERA5-Land: month %s FAILED (%s) — skipping, re-run resumes",
+                    month_start,
+                    exc,
+                )
+                continue
             if df is None or df.empty:
                 continue
 
