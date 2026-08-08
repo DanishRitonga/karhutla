@@ -54,6 +54,11 @@ ENV_CHANNELS = list(range(0, JETT_N_CHANNELS - 1))  # 0..20 (21 channels)
 OPERATIONAL_CHANNELS = list(range(0, JETT_N_CHANNELS))  # 0..21 (22 channels)
 FIRE_HISTORY_IDX = JETT_N_CHANNELS - 1
 
+_NN = np.mgrid[0:PATCH, 0:PATCH]
+_DIST = np.sqrt((_NN[0] - CENTER) ** 2 + (_NN[1] - CENTER) ** 2)
+RING1_MASK = (_DIST > 0) & (_DIST <= 3)
+RING2_MASK = (_DIST > 3) & (_DIST <= CENTER)
+
 # Canonical HuggingFace source for the pre-built tensors (tensors/ folder).
 # Falls back to this when the tensor files are not present locally.
 HF_REPO_ID = "danishritonga/karhutla"
@@ -237,6 +242,12 @@ def to_tabular(X: np.ndarray, channels: list[int]) -> tuple[np.ndarray, list[str
     if extra_feats:
         feats = np.concatenate([feats] + extra_feats, axis=1)
         names += extra_names
+
+    ring1_mean = Xc[:, :, RING1_MASK].mean(axis=2).mean(axis=1)
+    ring2_mean = Xc[:, :, RING2_MASK].mean(axis=2).mean(axis=1)
+    feats = np.concatenate([feats, ring1_mean, ring2_mean], axis=1)
+    names += [f"ring1.7x7_mean__{JETT_CHANNEL_NAMES[c]}" for c in channels]
+    names += [f"ring2.15x15_mean__{JETT_CHANNEL_NAMES[c]}" for c in channels]
 
     return feats.astype(np.float32), names
 
