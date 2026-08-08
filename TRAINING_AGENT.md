@@ -14,18 +14,24 @@ git checkout dnsh
 
 Dataset repo: `danishritonga/karhutla` (type: `dataset`).
 
+The training pipeline auto-downloads the tensors from HuggingFace if they are
+not found locally — `model/train.py` (via `model/data.load_tensors()`) pulls
+`tensors/` from the repo into `--tensor-dir` (default `data/output/tensors`)
+on first run. Just make sure you are logged in:
+
 ```bash
 # login once
 huggingface-cli login
 ```
 
-Download the pre-built tensors (DO NOT rebuild them — they took hours to assemble and are 100% validated, 0 NaN):
+Optionally pre-download the pre-built tensors yourself (DO NOT rebuild them —
+they took hours to assemble and are 100% validated, 0 NaN):
 
 ```bash
 huggingface-cli download danishritonga/karhutla tensors/ --repo-type=dataset --local-dir data/output
 ```
 
-This must produce:
+Either way you must end up with:
 - `data/output/tensors/data.npy`   → shape `(1826, 82, 85, 23)`, float32
 - `data/output/tensors/labels.npy` → shape `(1826, 82, 85)`, int8 (values -1/0/1)
 - `data/output/tensors/meta.json`

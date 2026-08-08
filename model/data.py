@@ -54,13 +54,76 @@ ENV_CHANNELS = list(range(0, JETT_N_CHANNELS - 1))  # 0..20 (21 channels)
 OPERATIONAL_CHANNELS = list(range(0, JETT_N_CHANNELS))  # 0..21 (22 channels)
 FIRE_HISTORY_IDX = JETT_N_CHANNELS - 1
 
+# Canonical HuggingFace source for the pre-built tensors (tensors/ folder).
+# Falls back to this when the tensor files are not present locally.
+HF_REPO_ID = "danishritonga/karhutla"
+HF_REPO_FOLDER = "tensors"
+HF_REPO_TYPE = "dataset"
+
+
+def _ensure_tensors_local(tensor_dir: Path) -> None:
+    """Download tensors from HuggingFace if they are not present locally.
+
+    If any of ``data.npy`` / ``labels.npy`` / ``meta.json`` is missing from
+    ``tensor_dir``, pulls the ``tensors/`` folder from ``HF_REPO_ID`` into
+    ``tensor_dir`` (creating it as needed). Uses the huggingface-hub cache so
+    re-runs are free. Raises SystemExit with a clear message if the download
+    is not possible.
+    """
+    required = ("data.npy", "labels.npy", "meta.json")
+    if all((tensor_dir / name).exists() for name in required):
+        return
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as exc:
+        raise SystemExit(
+            "Tensors not found locally and huggingface-hub is not installed.\n"
+            f"Expected {required} in {tensor_dir}. Either build them with\n"
+            "  uv run python data/loader/tensor_assembly.py --start 2019-01-01 --end 2023-12-31\n"
+            "or install huggingface-hub (uv add huggingface-hub) to download from "
+            f"https://huggingface.co/datasets/{HF_REPO_ID}"
+        ) from exc
+    logger.info("tensors not found in %s — downloading from %s/%s",
+                tensor_dir, HF_REPO_ID, HF_REPO_FOLDER)
+    try:
+        snapshot_download(
+            repo_id=HF_REPO_ID,
+            repo_type=HF_REPO_TYPE,
+            allow_patterns=f"{HF_REPO_FOLDER}/*",
+            local_dir=tensor_dir,
+        )
+    except Exception as exc:
+        raise SystemExit(
+            f"Failed to download tensors from https://huggingface.co/datasets/{HF_REPO_ID}: {exc}"
+        ) from exc
+    # snapshot_download preserves the folder path under local_dir, i.e. files
+    # land in <tensor_dir>/tensors/. Move them up so they sit directly in
+    # tensor_dir as the rest of the pipeline expects.
+    nested = tensor_dir / HF_REPO_FOLDER
+    if nested.is_dir():
+        for name in required:
+            src = nested / name
+            if src.exists() and not (tensor_dir / name).exists():
+                src.rename(tensor_dir / name)
+    missing = [n for n in required if not (tensor_dir / n).exists()]
+    if missing:
+        raise SystemExit(
+            f"Download completed but these files are still missing in {tensor_dir}: {missing}"
+        )
+    logger.info("tensors ready in %s", tensor_dir)
+
 
 def load_tensors(tensor_dir: Path) -> tuple[np.ndarray, np.ndarray, dict]:
     """Load (fields, labels, meta) from tensor_assembly output.
 
+    Auto-downloads from HuggingFace (``danishritonga/karhutla`` tensors/)
+    if the files are not present locally.
+
     Fields: [D,H,W,23] → [D,H,W,22] (drops dw_available).
     Labels: [D,H,W] int8 (-1/0/1).
     """
+    tensor_dir = Path(tensor_dir)
+    _ensure_tensors_local(tensor_dir)
     fields = np.load(tensor_dir / "data.npy").astype(np.float32)
     labels = np.load(tensor_dir / "labels.npy").astype(np.int8)
     meta = json.loads((tensor_dir / "meta.json").read_text())
