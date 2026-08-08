@@ -174,6 +174,37 @@ def extract(
     return X, y, day_index
 
 
+def compute_norm_stats(X: np.ndarray) -> list[dict]:
+    """Per-channel mean/std over [N, T, H, W, C] on train data only.
+
+    Returns a list of ``{"mean": float, "std": float}`` dicts, one per
+    channel, backed by float32 means/stds computed across ALL (N,T,H,W)
+    positions in the train set.
+    """
+    C = X.shape[-1]
+    stats = []
+    for c in range(C):
+        vals = X[..., c]
+        mu = float(vals.mean())
+        sigma = float(vals.std())
+        stats.append({"mean": mu, "std": sigma})
+    return stats
+
+
+def apply_norm(X: np.ndarray, stats: list[dict]) -> np.ndarray:
+    """Z-score normalise every channel using precomputed stats.
+
+    Channels whose train std == 0 are left unchanged (no division by zero).
+    """
+    Xn = X.astype(np.float32, copy=True)
+    for c, s in enumerate(stats):
+        sigma = s["std"]
+        if sigma < 1e-8:
+            continue
+        Xn[..., c] = (Xn[..., c] - s["mean"]) / sigma
+    return Xn
+
+
 def to_tabular(X: np.ndarray, channels: list[int]) -> tuple[np.ndarray, list[str]]:
     """Collapse [N,T,P,P,C] → tabular features (mirrors jett_data.to_tabular)."""
     Xc = X[..., channels]  # [N, T, H, W, C]

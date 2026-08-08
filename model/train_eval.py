@@ -76,6 +76,7 @@ def train_torch_model(model, X_train, y_train, X_val, y_val, epochs=6,
             logits = out[0] if isinstance(out, tuple) else out
             loss = criterion(logits, yb)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optim.step()
             epoch_loss += loss.item() * len(idx)
         epoch_loss /= n

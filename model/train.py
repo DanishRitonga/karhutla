@@ -46,6 +46,8 @@ from model.data import (
     eligible_mask,
     extract,
     to_tabular,
+    compute_norm_stats,
+    apply_norm,
     ENV_CHANNELS,
     OPERATIONAL_CHANNELS,
     JETT_CHANNEL_NAMES,
@@ -136,6 +138,16 @@ def main() -> None:
     X_val, y_val, _ = extract(fields, labels, val_cd)
     X_test, y_test, _ = extract(fields, labels, test_cd)
     logger.info("patches: train %s val %s test %s", X_train.shape, X_val.shape, X_test.shape)
+
+    # -- 3b. per-channel z-score normalisation (train stats only) ---------
+    norm_stats = compute_norm_stats(X_train)
+    X_train = apply_norm(X_train, norm_stats)
+    X_val = apply_norm(X_val, norm_stats)
+    X_test = apply_norm(X_test, norm_stats)
+    logger.info("normalised: %d channels (min/max μ=%.3g/%.3g σ=%.3g/%.3g)",
+                len(norm_stats),
+                min(s["mean"] for s in norm_stats), max(s["mean"] for s in norm_stats),
+                min(s["std"] for s in norm_stats), max(s["std"] for s in norm_stats))
 
     X_train_tab, tab_names = to_tabular(X_train, channels)
     X_val_tab, _          = to_tabular(X_val, channels)
