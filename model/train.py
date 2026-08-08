@@ -63,7 +63,7 @@ from model.interpret import shap_summary_for_lightgbm, attention_heatmap
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("train")
 
-DEVICE = "cpu"
+DEVICE = "cuda"
 
 
 def _sample_cell_days(
@@ -159,7 +159,7 @@ def main() -> None:
     if pos_in_tab_features is not None:
         logger.info("  PersistenceBaseline")
         pers = PersistenceBaseline(pos_in_tab_features)
-        pers_probs = pers.predict_proba(X_test_tab)
+        pers_probs = pers.predict_proba(X_test_tab)[:, 1]
         pers_met = evaluate_probs(y_test, pers_probs)
         logger.info("    Persist PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
                      pers_met["PR-AUC"], pers_met["F1"], pers_met["Recall"], pers_met["ROC-AUC"])
@@ -227,10 +227,10 @@ def main() -> None:
     results.append(("Spatiotemporal", "ConvLSTM", cl_met))
 
     # --- Temporal Transformer ---
-    d_model = 48 if JETT_N_CHANNELS >= 22 else 64
+    d_model = 256
     logger.info("  Temporal Transformer (d_model=%d)", d_model)
     tt = TemporalTransformerHotspot(in_channels=n_ch, seq_len=14, d_model=d_model,
-                                    n_heads=4, dim_ff=128, dropout=0.2)
+                                    n_heads=4, dim_ff=512, dropout=0.2)
     tt = train_torch_model(tt, X_train[..., channels], y_train,
                            X_val[..., channels], y_val,
                            lr=args.lr, epochs=args.epochs,
@@ -269,13 +269,8 @@ def main() -> None:
     if len(pos_idx):
         idx = pos_idx[0]
         attn_path = args.out_dir / f"attention_heatmap_{regime_label}.png"
-        with torch.no_grad():
-            xs = torch.from_numpy(X_test[idx, ..., channels][None]).permute(0, 1, 4, 2, 3).float()
-            out = tt(xs, return_attn=True)
-            p = torch.sigmoid(out[0]).item()
-            attn = out[1].cpu().numpy()
-        attention_heatmap(attn, save_path=attn_path, title=f"{mode} — Sample day {idx}, p={p:.3f}")
-        logger.info("attention heatmap → %s", attn_path)
+        prob, _ = attention_heatmap(tt, X_test[idx][..., channels], DEVICE, attn_path)
+        logger.info("attention heatmap → %s (prob=%.3f)", attn_path, prob)
 
     logger.info("all done — %d models, %s regime", len(results), regime_label)
 

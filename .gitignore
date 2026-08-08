@@ -33,3 +33,8 @@ data/output/dynamic_world/
 
 # Pre-built tensors (1.1 GB) — hosted on HuggingFace, not git
 data/output/tensors/
+
+# Training output dirs
+outputs/
+outputs_env/
+outputs_gpu/

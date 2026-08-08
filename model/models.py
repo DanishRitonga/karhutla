@@ -123,7 +123,7 @@ class ConvLSTMHotspot(nn.Module):
     Output: [B] logits
     """
 
-    def __init__(self, in_channels, hidden_channels=(24, 24), kernel_size=3, dropout=0.2):
+    def __init__(self, in_channels, hidden_channels=(64, 32), kernel_size=3, dropout=0.2):
         super().__init__()
         layers = []
         prev = in_channels
@@ -157,22 +157,21 @@ class ConvLSTMHotspot(nn.Module):
 # ----------------------------------------------------------------------
 # 5. Temporal Transformer (main spatiotemporal model)
 # ----------------------------------------------------------------------
-class FrameEncoder(nn.Module):
-    """Small CNN that turns one [C,H,W] frame into a d_model feature vector."""
+import torchvision.models as tv_models
+
+
+class ResNetFrameEncoder(nn.Module):
+    """Replace toy Conv2d->AvgPool with a ResNet-18 backbone."""
 
     def __init__(self, in_channels, d_model):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(in_channels, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(),
-            nn.Conv2d(32, 64, 3, padding=1, stride=2), nn.BatchNorm2d(64), nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1),
-        )
-        self.proj = nn.Linear(64, d_model)
+        self.backbone = tv_models.resnet18(weights=None)
+        self.backbone.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7,
+                                         stride=2, padding=3, bias=False)
+        self.backbone.fc = nn.Linear(512, d_model)
 
     def forward(self, x):
-        # x: [B, C, H, W]
-        z = self.net(x).flatten(1)
-        return self.proj(z)
+        return self.backbone(x)
 
 
 class SelfAttnBlock(nn.Module):
@@ -208,10 +207,10 @@ class TemporalTransformerHotspot(nn.Module):
     interpretability (interpret.py).
     """
 
-    def __init__(self, in_channels, seq_len=14, d_model=64, n_heads=4,
-                 n_layers=2, dim_ff=128, dropout=0.2):
+    def __init__(self, in_channels, seq_len=14, d_model=256, n_heads=4,
+                 n_layers=2, dim_ff=512, dropout=0.2):
         super().__init__()
-        self.frame_encoder = FrameEncoder(in_channels, d_model)
+        self.frame_encoder = ResNetFrameEncoder(in_channels, d_model)
         self.pos_embed = nn.Parameter(torch.randn(1, seq_len, d_model) * 0.02)
         self.blocks = nn.ModuleList(
             [SelfAttnBlock(d_model, n_heads, dim_ff, dropout) for _ in range(n_layers)]
