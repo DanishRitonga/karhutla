@@ -102,6 +102,8 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--conv-lstm-hidden", type=int, nargs="+", default=(12, 12),
+                        help="ConvLSTM hidden channels, e.g. 12 12 / 24 24 / 64 32")
     parser.add_argument("--n-train", type=int, default=50000)
     parser.add_argument("--n-val", type=int, default=10000)
     parser.add_argument("--n-test", type=int, default=20000)
@@ -226,8 +228,9 @@ def main() -> None:
     results.append(("Tabular", "LightGBM", lgb_met))
 
     # --- ConvLSTM ---
-    logger.info("  ConvLSTM")
-    cls = ConvLSTMHotspot(in_channels=n_ch, hidden_channels=(12, 12), kernel_size=3, dropout=0.2)
+    hidden = tuple(args.conv_lstm_hidden)
+    logger.info("  ConvLSTM hidden=%s", hidden)
+    cls = ConvLSTMHotspot(in_channels=n_ch, hidden_channels=hidden, kernel_size=3, dropout=0.2)
     cls = train_torch_model(cls, X_train[..., channels], y_train,
                             X_val[..., channels], y_val,
                             lr=args.lr, epochs=args.epochs,
