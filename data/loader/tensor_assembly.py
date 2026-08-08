@@ -27,8 +27,12 @@ Missing-data policy (0+mask, per user decision):
   * Sentinel-1: forward-filled CSVs carry NaN where the gap exceeded the
     14-day cap. sar_vv/sar_vh = 0 where NaN, sar_available = 1 where a
     valid value exists, else 0.
-  * CHIRPS / ERA5-Land are complete daily products (missing = sea cells,
-    out of CHIRPS land mask): filled with 0.
+  * CHIRPS is a complete daily product (missing = sea cells, out of CHIRPS
+    land mask): filled with 0.
+  * ERA5-Land covers a static 5,821-cell footprint (cells whose center falls
+    outside the 0.1-degree grid are never returned). Missing cells are
+    spatially filled from the nearest valid cell by projected distance
+    (values are smooth at ~11 km native resolution) — NOT 0-filled.
   * Peat is static, broadcast across all days.
   * Fire history (channel 22) = rolling sum of per-cell daily hotspot
     counts over the previous T_IN=14 days (lag, no future leakage).
@@ -55,6 +59,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.spatial import cKDTree
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("tensor_assembly")
@@ -160,9 +165,10 @@ class FieldAssembler:
         """df (cell_idx,row,col,date,value) -> [n_days,H,W] float32."""
         out = np.zeros((len(days), self.grid_h, self.grid_w), dtype=np.float32)
         cell_rc = cells.set_index("cell_idx")[["row", "col"]]
+        by_date = {d: g for d, g in df.groupby("date")}
         for di, d in enumerate(days):
-            sub = df[df["date"] == d.isoformat()]
-            if sub.empty:
+            sub = by_date.get(d.isoformat())
+            if sub is None or sub.empty:
                 continue
             merged = sub.set_index("cell_idx")[[value_col]].join(cell_rc, how="inner")
             out[di, merged["row"].to_numpy(), merged["col"].to_numpy()] = (
@@ -182,9 +188,10 @@ class FieldAssembler:
             (len(days), self.grid_h, self.grid_w, len(value_cols)), dtype=np.float32
         )
         cell_rc = cells.set_index("cell_idx")[["row", "col"]]
+        by_date = {d: g for d, g in df.groupby("date")}
         for di, d in enumerate(days):
-            sub = df[df["date"] == d.isoformat()]
-            if sub.empty:
+            sub = by_date.get(d.isoformat())
+            if sub is None or sub.empty:
                 continue
             merged = sub.set_index("cell_idx")[value_cols].join(cell_rc, how="inner")
             r, c = merged["row"].to_numpy(), merged["col"].to_numpy()
@@ -197,10 +204,71 @@ class FieldAssembler:
         df = _load_frame(paths)
         return self._rasterize(df, "precip_mm", days, cells)
 
+    def _static_nearest_fill_map(
+        self,
+        cells: pd.DataFrame,
+        present_cell_idx: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return (fill_row, fill_col) 2D grids of shape (H, W).
+
+        fill_row[r, c] / fill_col[r, c] give the (row, col) of the nearest
+        cell that has real data (``present_cell_idx``, the static 5,821-cell
+        ERA5-Land footprint). Cells that are present map to themselves;
+        missing cells map to their nearest present neighbour by projected
+        distance (cKDTree over x/y center metres).
+        """
+        valid = cells[cells["cell_idx"].isin(present_cell_idx)]
+        valid_row = valid["row"].to_numpy()
+        valid_col = valid["col"].to_numpy()
+        tree = cKDTree(
+            np.c_[valid["x_center_m"].to_numpy(), valid["y_center_m"].to_numpy()]
+        )
+        all_xy = np.c_[cells["x_center_m"].to_numpy(), cells["y_center_m"].to_numpy()]
+        _, idx = tree.query(all_xy, k=1)
+
+        fill_row = np.zeros((self.grid_h, self.grid_w), dtype=np.int64)
+        fill_col = np.zeros((self.grid_h, self.grid_w), dtype=np.int64)
+        fill_row[cells["row"].to_numpy(), cells["col"].to_numpy()] = valid_row[idx]
+        fill_col[cells["row"].to_numpy(), cells["col"].to_numpy()] = valid_col[idx]
+        return fill_row, fill_col
+
     def era5(self, days: list[date], cells: pd.DataFrame) -> np.ndarray:
+        """Returns [n_days,H,W,8] with ERA5-Land channels.
+
+        ERA5-Land only covers 5,821 of 6,970 cells (cells whose center falls
+        outside the 0.1-degree grid footprint at scale 9000 are never
+        returned). The missing set is static geography; each missing cell is
+        filled from its nearest valid cell (values are spatially smooth at
+        ~11 km native resolution). Two missingness modes are both filled:
+          * cells absent on a given day -> 0 (from _rasterize_multi init)
+          * cells present-but-NaN on a day -> NaN (full-coverage days)
+        See module docstring missing-data policy.
+        """
         paths = _month_paths(days[0], days[-1], self.data_dir / "era5land", "era5land")
         df = _load_frame(paths)
-        return self._rasterize_multi(df, ERA5_BANDS, days, cells)
+        out = self._rasterize_multi(df, ERA5_BANDS, days, cells)
+
+        valid = df.dropna(subset=ERA5_BANDS)
+        valid_idx = valid["cell_idx"].unique()
+        if len(valid_idx) < len(cells):
+            fill_row, fill_col = self._static_nearest_fill_map(cells, valid_idx)
+            by_date = {d: g for d, g in df.groupby("date")}
+            for di, d in enumerate(days):
+                present = np.zeros((self.grid_h, self.grid_w), dtype=bool)
+                sub = by_date.get(d.isoformat())
+                if sub is not None:
+                    present[sub["row"].to_numpy(), sub["col"].to_numpy()] = True
+                nan_mask = np.isnan(out[di])
+                to_fill = nan_mask | (~present)[:, :, None]
+                if to_fill.any():
+                    src = out[di][fill_row, fill_col, :]
+                    out[di] = np.where(to_fill, src, out[di])
+            logger.info(
+                "era5: spatial-filled %d of %d cells from nearest valid",
+                len(cells) - len(valid_idx),
+                len(cells),
+            )
+        return out
 
     def sentinel1(self, days: list[date], cells: pd.DataFrame) -> np.ndarray:
         """Returns [n_days,H,W,3] = (sar_vv, sar_vh, sar_available).
@@ -225,9 +293,10 @@ class FieldAssembler:
             cell_rc = cells.set_index("cell_idx")[["row", "col"]]
             avail_col = f"{orbit.lower()}_avail"
             df[avail_col] = df[["vv_db", "vh_db"]].notna().any(axis=1).astype(np.float32)
+            by_date = {d: g for d, g in df.groupby("date")}
             for di, d in enumerate(days):
-                sub = df[df["date"] == d.isoformat()]
-                if sub.empty:
+                sub = by_date.get(d.isoformat())
+                if sub is None or sub.empty:
                     continue
                 r, c = sub["row"].to_numpy(), sub["col"].to_numpy()
                 out[di, r, c, 0] = sub["vv_db"].fillna(0.0).to_numpy()
@@ -250,9 +319,10 @@ class FieldAssembler:
             return out
         df = pd.concat(frames, ignore_index=True)
         df["date"] = pd.to_datetime(df["date"]).dt.date.astype(str)
+        by_date = {d: g for d, g in df.groupby("date")}
         for di, d in enumerate(days):
-            sub = df[df["date"] == d.isoformat()]
-            if sub.empty:
+            sub = by_date.get(d.isoformat())
+            if sub is None or sub.empty:
                 continue
             r, c = sub["row"].to_numpy(), sub["col"].to_numpy()
             for vi, col in enumerate(DW_CSV_COLS):
@@ -276,9 +346,13 @@ class FieldAssembler:
         """
         n_days = daily_count.shape[0]
         out = np.zeros_like(daily_count, dtype=np.float32)
+        csum = np.concatenate(
+            [np.zeros((1,) + daily_count.shape[1:], dtype=daily_count.dtype),
+             daily_count.cumsum(axis=0)], axis=0
+        )
         for t in range(n_days):
             lo = max(0, t - T_IN + 1)
-            out[t] = daily_count[lo : t + 1].sum(axis=0)
+            out[t] = csum[t + 1] - csum[lo]
         return out
 
     def assemble(
@@ -348,9 +422,10 @@ def build_labels(
     df["date"] = pd.to_datetime(df["date"]).dt.date.astype(str)
     cell_rc = cells.set_index("cell_idx")[["row", "col"]]
     out = np.full((len(days), cells["row"].max() + 1, cells["col"].max() + 1), -1, dtype=np.int8)
+    by_date = {d: g for d, g in df.groupby("date")}
     for di, d in enumerate(days):
-        sub = df[df["date"] == d.isoformat()]
-        if sub.empty:
+        sub = by_date.get(d.isoformat())
+        if sub is None or sub.empty:
             continue
         merged = sub.set_index("cell_idx")[["fire_label"]].join(cell_rc, how="inner")
         r, c = merged["row"].to_numpy(), merged["col"].to_numpy()
@@ -423,12 +498,14 @@ def build_daily_counts(
             cell_rc, left_on="cell_idx", right_index=True, how="left"
         )
         merged = merged.dropna(subset=["row", "col"])
+        counts_by_day = {
+            d: g.groupby(["row", "col"]).size()
+            for d, g in merged.groupby("date")
+        }
         for (di), d in enumerate(days):
-            ds = d.isoformat()
-            sub = merged[merged["date"] == ds]
-            if sub.empty:
+            counts = counts_by_day.get(d.isoformat())
+            if counts is None or counts.empty:
                 continue
-            counts = sub.groupby(["row", "col"]).size()
             out[di, counts.index.get_level_values(0).to_numpy().astype(int),
                 counts.index.get_level_values(1).to_numpy().astype(int)] = counts.to_numpy()
     return out

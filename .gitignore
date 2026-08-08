@@ -30,3 +30,6 @@ docs-task2/
 task1/
 data/output/era5land/
 data/output/dynamic_world/
+
+# Pre-built tensors (1.1 GB) — hosted on HuggingFace, not git
+data/output/tensors/
