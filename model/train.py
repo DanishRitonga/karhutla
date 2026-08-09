@@ -40,6 +40,7 @@ import torch
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
 
 from model.data import (
     load_tensors,
@@ -92,6 +93,67 @@ def _sample_cell_days(
     return sel[:n_samples]
 
 
+def _sample_seasonal(
+    eligible: np.ndarray,
+    labels: np.ndarray,
+    years: np.ndarray,
+    doys: np.ndarray,
+    yr_lo: int,
+    yr_hi: int,
+    n_samples: int,
+    seasonal_margin: int = 30,
+    seed: int = 42,
+) -> np.ndarray:
+    """Seasonal 1:1 negative matching à la Sinato & Rivas (2026).
+
+    Each positive cell-day is paired with one negative from the same
+    ±seasonal_margin day-of-year window in a *different* year within
+    [yr_lo, yr_hi]. This forces the model to distinguish fire-driving
+    weather from normal seasonal weather, preventing it from becoming a
+    "glorified calendar."
+    """
+    rng = np.random.default_rng(seed + yr_lo)
+    yr_mask = (years[:, None, None] >= yr_lo) & (years[:, None, None] <= yr_hi)
+    mask = eligible & yr_mask
+
+    pos_ix = np.argwhere(mask & (labels == 1))
+    neg_ix = np.argwhere(mask & (labels == 0))
+
+    # index negatives by (day_of_year, year) for fast lookup
+    neg_by_year = {}
+    for i in neg_ix:
+        t, r, c_ = int(i[0]), int(i[1]), int(i[2])
+        d = int(doys[t])
+        y = int(years[t])
+        neg_by_year.setdefault((y, d), []).append(i)
+
+    sel = []
+    for pi in pos_ix:
+        t, r, c_ = int(pi[0]), int(pi[1]), int(pi[2])
+        target_doy = int(doys[t])
+        target_yr = int(years[t])
+        candidates = []
+        for (y, d), idxs in neg_by_year.items():
+            if y == target_yr:
+                continue
+            doy_diff = abs(d - target_doy)
+            if doy_diff > seasonal_margin and doy_diff < 365 - seasonal_margin:
+                continue
+            candidates.extend(idxs)
+        if not candidates:
+            continue  # rare; skip this positive
+        sel.append(pi)
+        sel.append(candidates[rng.integers(len(candidates))])
+        if len(sel) >= n_samples * 2:
+            break
+
+    sel = np.array(sel, dtype=int)
+    rng.shuffle(sel)
+    logger.info("seasonal 1:1 — matched %d pos (total %d samples, %.1f %% of pop)", len(sel) // 2, len(sel),
+                100.0 * len(sel) / max(mask.sum(), 1))
+    return sel[:n_samples]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train + evaluate spatiotemporal fire models")
     parser.add_argument("--tensor-dir", type=Path, default=Path("data/output/tensors"))
@@ -108,6 +170,10 @@ def main() -> None:
     parser.add_argument("--n-val", type=int, default=10000)
     parser.add_argument("--n-test", type=int, default=20000)
     parser.add_argument("--pos-frac", type=float, default=0.25)
+    parser.add_argument("--balance", choices=["random", "seasonal"], default="random",
+                        help="random: sample negatives randomly (default). seasonal: 1:1 seasonal matching (Sinato & Rivas 2026).")
+    parser.add_argument("--seasonal-margin", type=int, default=30,
+                        help="day-of-year margin for seasonal matching (default 30)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out-dir", type=Path, default=Path("outputs"))
     parser.add_argument("--verbose", action="store_true")
@@ -123,6 +189,7 @@ def main() -> None:
     fields, labels, meta = load_tensors(args.tensor_dir)
     dates = pd.to_datetime(meta["dates"])
     years = dates.year.to_numpy()
+    doys = dates.dayofyear.to_numpy()
     logger.info("fields %s, labels %s", fields.shape, labels.shape)
     logger.info("dates %s → %s", dates[0].date(), dates[-1].date())
 
@@ -130,9 +197,15 @@ def main() -> None:
     eligible = eligible_mask(labels, meta)
     logger.info("eligible cell-days: %d (%.1f%% pos)",
                 int(eligible.sum()), 100 * labels[eligible].mean())
-    train_cd = _sample_cell_days(eligible, labels, years, *args.train, args.n_train, args.pos_frac, args.seed)
-    val_cd   = _sample_cell_days(eligible, labels, years, *args.val,   args.n_val,   args.pos_frac, args.seed)
-    test_cd  = _sample_cell_days(eligible, labels, years, *args.test,  args.n_test,  args.pos_frac, args.seed)
+    if args.balance == "seasonal":
+        logger.info("using seasonal 1:1 negative matching (margin ±%d days)", args.seasonal_margin)
+        train_cd = _sample_seasonal(eligible, labels, years, doys, *args.train, args.n_train, args.seasonal_margin, args.seed)
+        val_cd   = _sample_seasonal(eligible, labels, years, doys, *args.val,   args.n_val,   args.seasonal_margin, args.seed)
+        test_cd  = _sample_seasonal(eligible, labels, years, doys, *args.test,  args.n_test,  args.seasonal_margin, args.seed)
+    else:
+        train_cd = _sample_cell_days(eligible, labels, years, *args.train, args.n_train, args.pos_frac, args.seed)
+        val_cd   = _sample_cell_days(eligible, labels, years, *args.val,   args.n_val,   args.pos_frac, args.seed)
+        test_cd  = _sample_cell_days(eligible, labels, years, *args.test,  args.n_test,  args.pos_frac, args.seed)
     logger.info("samples: train=%d val=%d test=%d", len(train_cd), len(val_cd), len(test_cd))
 
     # -- 3. extract patches + tabular features ---------------------------
@@ -226,6 +299,18 @@ def main() -> None:
     logger.info("    LGBM    PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
                  lgb_met["PR-AUC"], lgb_met["F1"], lgb_met["Recall"], lgb_met["ROC-AUC"])
     results.append(("Tabular", "LightGBM", lgb_met))
+
+    # --- Tabular XGBoost (Sinato & Rivas 2026 config) ---
+    logger.info("  Tabular XGBoost")
+    xgb = XGBClassifier(n_estimators=300, max_depth=8, learning_rate=0.05,
+                        subsample=0.8, colsample_bytree=0.8,
+                        random_state=args.seed, verbosity=0)
+    xgb.fit(X_train_tab, y_train)
+    xgb_prob = xgb.predict_proba(X_test_tab)[:, 1]
+    xgb_met = evaluate_probs(y_test, xgb_prob)
+    logger.info("    XGB     PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
+                 xgb_met["PR-AUC"], xgb_met["F1"], xgb_met["Recall"], xgb_met["ROC-AUC"])
+    results.append(("Tabular", "XGBoost", xgb_met))
 
     # --- ConvLSTM ---
     hidden = tuple(args.conv_lstm_hidden)

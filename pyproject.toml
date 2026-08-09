@@ -17,4 +17,6 @@ dependencies = [
     "shap>=0.52.0",
     "shapely>=2.1.2",
     "torch>=2.13.0",
+    "torchvision>=0.28.0",
+    "xgboost>=3.4.0",
 ]
