@@ -13,14 +13,18 @@ Usage (from datathon root after ``tensor_assembly.py`` has run)::
         --train 2019 2021 \\
         --val 2022 2022 \\
         --test 2023 2023 \\
-        --regime env \\
-        --epochs 10 \\
-        --out-dir outputs
+    --regime env \\
+    --epochs 10 \\
+    --out-dir outputs
 
 Run both regimes for the paper's Table 3::
 
     uv run python model/train.py --regime env
     uv run python model/train.py --regime operational
+
+Tabular-only (skip ConvLSTM + Temporal Transformer)::
+
+    uv run python model/train.py --regime operational --no-dl
 """
 
 from __future__ import annotations
@@ -177,6 +181,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out-dir", type=Path, default=Path("outputs"))
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--no-dl", action="store_true",
+                        help="skip ConvLSTM + Temporal Transformer (tabular models only)")
     args = parser.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -310,34 +316,46 @@ def main() -> None:
                  xgb_met["PR-AUC"], xgb_met["F1"], xgb_met["Recall"], xgb_met["ROC-AUC"])
     results.append(("Tabular", "XGBoost", xgb_met))
 
-    # --- ConvLSTM ---
-    hidden = tuple(args.conv_lstm_hidden)
-    logger.info("  ConvLSTM hidden=%s", hidden)
-    cls = ConvLSTMHotspot(in_channels=n_ch, hidden_channels=hidden, kernel_size=3, dropout=0.2)
-    cls = train_torch_model(cls, X_train[..., channels], y_train,
-                            X_val[..., channels], y_val,
-                            lr=args.lr, epochs=args.epochs,
-                            batch_size=args.batch_size, device=DEVICE, verbose=args.verbose)
-    cl_prob = predict_torch_model(cls, X_test[..., channels], device=DEVICE)
-    cl_met = evaluate_probs(y_test, cl_prob)
-    logger.info("    ConvLSTM PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
-                 cl_met["PR-AUC"], cl_met["F1"], cl_met["Recall"], cl_met["ROC-AUC"])
-    results.append(("Spatiotemporal", "ConvLSTM", cl_met))
+    # --- Soft-voting ensemble (RF + LightGBM + XGBoost) ---
+    # All three trees split on the same tabular features, so their predictions
+    # are highly correlated; this is a robustness data-point, not expected to
+    # beat the best member. Mean of calibrated-scale probabilities.
+    logger.info("  Soft-voting ensemble (RF + LightGBM + XGBoost)")
+    ens_prob = (rf_prob + lgb_prob + xgb_prob) / 3.0
+    ens_met = evaluate_probs(y_test, ens_prob)
+    logger.info("    ENS     PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
+                 ens_met["PR-AUC"], ens_met["F1"], ens_met["Recall"], ens_met["ROC-AUC"])
+    results.append(("Tabular", "Ensemble (RF+LGBM+XGB)", ens_met))
 
-    # --- Temporal Transformer ---
-    d_model = 256
-    logger.info("  Temporal Transformer (d_model=%d)", d_model)
-    tt = TemporalTransformerHotspot(in_channels=n_ch, seq_len=14, d_model=d_model,
-                                    n_heads=4, dim_ff=512, dropout=0.2)
-    tt = train_torch_model(tt, X_train[..., channels], y_train,
-                           X_val[..., channels], y_val,
-                           lr=args.lr, epochs=args.epochs,
-                           batch_size=args.batch_size, device=DEVICE, verbose=args.verbose)
-    tt_prob = predict_torch_model(tt, X_test[..., channels], device=DEVICE)
-    tt_met = evaluate_probs(y_test, tt_prob)
-    logger.info("    Transf   PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
-                 tt_met["PR-AUC"], tt_met["F1"], tt_met["Recall"], tt_met["ROC-AUC"])
-    results.append(("Spatiotemporal", "Temporal Transformer", tt_met))
+    if not args.no_dl:
+        # --- ConvLSTM ---
+        hidden = tuple(args.conv_lstm_hidden)
+        logger.info("  ConvLSTM hidden=%s", hidden)
+        cls = ConvLSTMHotspot(in_channels=n_ch, hidden_channels=hidden, kernel_size=3, dropout=0.2)
+        cls = train_torch_model(cls, X_train[..., channels], y_train,
+                                X_val[..., channels], y_val,
+                                lr=args.lr, epochs=args.epochs,
+                                batch_size=args.batch_size, device=DEVICE, verbose=args.verbose)
+        cl_prob = predict_torch_model(cls, X_test[..., channels], device=DEVICE)
+        cl_met = evaluate_probs(y_test, cl_prob)
+        logger.info("    ConvLSTM PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
+                     cl_met["PR-AUC"], cl_met["F1"], cl_met["Recall"], cl_met["ROC-AUC"])
+        results.append(("Spatiotemporal", "ConvLSTM", cl_met))
+
+        # --- Temporal Transformer ---
+        d_model = 256
+        logger.info("  Temporal Transformer (d_model=%d)", d_model)
+        tt = TemporalTransformerHotspot(in_channels=n_ch, seq_len=14, d_model=d_model,
+                                        n_heads=4, dim_ff=512, dropout=0.2)
+        tt = train_torch_model(tt, X_train[..., channels], y_train,
+                               X_val[..., channels], y_val,
+                               lr=args.lr, epochs=args.epochs,
+                               batch_size=args.batch_size, device=DEVICE, verbose=args.verbose)
+        tt_prob = predict_torch_model(tt, X_test[..., channels], device=DEVICE)
+        tt_met = evaluate_probs(y_test, tt_prob)
+        logger.info("    Transf   PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
+                     tt_met["PR-AUC"], tt_met["F1"], tt_met["Recall"], tt_met["ROC-AUC"])
+        results.append(("Spatiotemporal", "Temporal Transformer", tt_met))
 
     # -- 5. write comparison table ----------------------------------
     rows = []
@@ -364,7 +382,7 @@ def main() -> None:
 
     # attention on a single positive test sample
     pos_idx = np.flatnonzero(y_test == 1)
-    if len(pos_idx):
+    if not args.no_dl and len(pos_idx):
         idx = pos_idx[0]
         attn_path = args.out_dir / f"attention_heatmap_{regime_label}.png"
         prob, _ = attention_heatmap(tt, X_test[idx][..., channels], DEVICE, attn_path)

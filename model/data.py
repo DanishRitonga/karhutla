@@ -243,8 +243,11 @@ def to_tabular(X: np.ndarray, channels: list[int]) -> tuple[np.ndarray, list[str
         feats = np.concatenate([feats] + extra_feats, axis=1)
         names += extra_names
 
-    ring1_mean = Xc[:, :, RING1_MASK].mean(axis=2).mean(axis=1)
-    ring2_mean = Xc[:, :, RING2_MASK].mean(axis=2).mean(axis=1)
+    ring1_mask = RING1_MASK.astype(np.float32)[None, None, :, :, None]  # [1,1,15,15,1]
+    ring2_mask = RING2_MASK.astype(np.float32)[None, None, :, :, None]
+    n_t = Xc.shape[1]
+    ring1_mean = (Xc * ring1_mask).sum(axis=(1, 2, 3)) / (RING1_MASK.sum() * n_t)
+    ring2_mean = (Xc * ring2_mask).sum(axis=(1, 2, 3)) / (RING2_MASK.sum() * n_t)
     feats = np.concatenate([feats, ring1_mean, ring2_mean], axis=1)
     names += [f"ring1.7x7_mean__{JETT_CHANNEL_NAMES[c]}" for c in channels]
     names += [f"ring2.15x15_mean__{JETT_CHANNEL_NAMES[c]}" for c in channels]

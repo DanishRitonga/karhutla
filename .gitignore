@@ -38,3 +38,4 @@ data/output/tensors/
 outputs/
 outputs_env/
 outputs_gpu/
+outputs_tabonly/

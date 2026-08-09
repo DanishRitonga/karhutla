@@ -109,7 +109,7 @@ Train 2019–2021 · Val 2022 · Test 2023. Metrics: PR-AUC primary, then F1, Re
 
 ## 6. Memory note (why we don't run here)
 
-`X_train` alone is `[50000, 14, 15, 15, 21]` float32 ≈ 2.6 GB, plus val/test and tabular copies. If you hit OOM, drop `--n-train` to 20000 and `--n-val` to 5000 (keep `--n-test 20000`).
+`X_train` alone is `[50000, 14, 15, 15, 21]` float32 ≈ **13 GB** (not 2.6 GB — includes the 15×15 patch area), plus val/test, the `apply_norm` copy, and ring-feature temporaries. Budget ≥ 24 GB free RAM for the 50k default. If you hit OOM, drop `--n-train` to 20000 and `--n-val` to 5000 (keep `--n-test 20000`). Tabular-only runs can skip the DL models with `--no-dl` (they need far less memory).
 
 ## 7. Report back
 
