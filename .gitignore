@@ -7,6 +7,9 @@ __pycache__/
 dist/
 build/
 
+# Secrets — never commit tokens
+.env
+
 # Large ingested CSVs — regenerated from ingest scripts
 data/output/chirpsv3/
 data/output/sentinel1/
