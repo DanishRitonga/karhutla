@@ -106,6 +106,10 @@ Train 2019–2021 · Val 2022 · Test 2023. Metrics: PR-AUC primary, then F1, Re
 - `comparison_table_env.csv` / `comparison_table_operational.csv`
 - `shap_importance_env.png` / `shap_importance_operational.png`
 - `attention_heatmap_env.png` / `attention_heatmap_operational.png`
+- `checkpoint_{env|operational}.json` — inference metadata (norm_stats, channels, tab_names, best thresholds)
+- `model_{persistence,met_lr,lr,rf,lgbm,xgb}_{env|operational}.joblib` — fitted tabular models
+
+**The production checkpoint is `model_lgbm_operational.joblib` + `checkpoint_operational.json`.** Treat these as the deliverable: copy the whole `outputs/` dir (or at least the operational pair) back to the user — they are the input to `model/inference.py` and the paper's headline results. Do not lose the `.json` sidecar; without `norm_stats` the model cannot be re-applied to new data.
 
 ## 6. Memory note (why we don't run here)
 
