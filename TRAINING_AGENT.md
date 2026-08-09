@@ -66,6 +66,27 @@ python model/train.py --regime env --epochs 10 --out-dir outputs
 python model/train.py --regime operational --epochs 10 --out-dir outputs
 ```
 
+> **Longer-epochs experiment (ConvLSTM + Transformer convergence).** Prior runs
+> used 30 epochs; both DL models were still improving at epoch 30 (ConvLSTM env
+> loss still decreasing; Transformer op had a ~14-epoch "escape" phase then rapid
+> learning). The training loop restores the best-val-PR-AUC checkpoint, so
+> overfitting is protected. Run the two spatiotemporal models for 60+ epochs to
+> check convergence. Either run the full suite with `--epochs 60`, or to save
+> wall-clock time, re-run just the DL models via a slimmed call (tabular models
+> are epoch-free and unaffected):
+>
+> ```bash
+> python model/train.py --regime env --epochs 60 --n-train 20000 --n-val 5000 --out-dir outputs_long
+> python model/train.py --regime operational --epochs 60 --n-train 20000 --n-val 5000 --out-dir outputs_long
+> ```
+>
+> Optionally also try the **seasonal 1:1 negative matching** (Sinato & Rivas
+> 2026): `--balance seasonal` (training-set only; val/test always random).
+> Earlier 30-epoch seasonal results: LightGBM collapses (0.477→0.305 env) while
+> Transformer improves (0.201→0.322 env) — trees were exploiting calendar
+> proxies. A 60-epoch seasonal run tells us if the Transformer closes the gap
+> further.
+
 Model inventory (train.py runs them all):
 | Model | Family |
 |---|---|
@@ -74,8 +95,9 @@ Model inventory (train.py runs them all):
 | Logistic Regression | tabular |
 | Random Forest | tabular |
 | LightGBM | tabular |
+| XGBoost (Sinato 2026 config: 300 trees, depth 8, lr 0.05) | tabular |
 | ConvLSTM (hidden (12,12)) | spatiotemporal |
-| Temporal Transformer (d_model=48) | spatiotemporal |
+| Temporal Transformer (ResNet-18 frame encoder, d_model=256) | spatiotemporal |
 
 Train 2019–2021 · Val 2022 · Test 2023. Metrics: PR-AUC primary, then F1, Recall, ROC-AUC.
 
