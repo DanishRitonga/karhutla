@@ -217,6 +217,7 @@ def main() -> None:
     X_val, y_val, _ = extract(fields, labels, val_cd)
     X_test, y_test, _ = extract(fields, labels, test_cd)
     logger.info("patches: train %s val %s test %s", X_train.shape, X_val.shape, X_test.shape)
+    del fields  # free the full [D,H,W,C] grid (~1.2 GB) — only the patches are needed now
 
     # -- 3b. per-channel z-score normalisation (train stats only) ---------
     norm_stats = compute_norm_stats(X_train)

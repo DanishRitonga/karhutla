@@ -200,19 +200,32 @@ def apply_norm(X: np.ndarray, stats: list[dict]) -> np.ndarray:
     """Z-score normalise every channel using precomputed stats.
 
     Channels whose train std == 0 are left unchanged (no division by zero).
+
+    Normalises **in place** when possible (X is float32) to avoid a second
+    multi-GB copy of the patch tensor at large N (e.g. 50k train ≈ 13 GB).
     """
-    Xn = X.astype(np.float32, copy=True)
+    if X.dtype != np.float32:
+        X = X.astype(np.float32)
     for c, s in enumerate(stats):
         sigma = s["std"]
         if sigma < 1e-8:
             continue
-        Xn[..., c] = (Xn[..., c] - s["mean"]) / sigma
-    return Xn
+        X[..., c] = (X[..., c] - s["mean"]) / sigma
+    return X
 
 
 def to_tabular(X: np.ndarray, channels: list[int]) -> tuple[np.ndarray, list[str]]:
-    """Collapse [N,T,P,P,C] → tabular features (mirrors jett_data.to_tabular)."""
-    Xc = X[..., channels]  # [N, T, H, W, C]
+    """Collapse [N,T,P,P,C] → tabular features (mirrors jett_data.to_tabular).
+
+    Memory-light: channels are a leading prefix so ``X[..., :len(channels)]``
+    is a *view* (no fancy-index copy), and the ring means are computed in
+    chunks so the broadcast product stays bounded.
+    """
+    n_ch = len(channels)
+    if channels == list(range(n_ch)):
+        Xc = X[..., :n_ch]  # [N, T, H, W, n_ch] view — no copy
+    else:
+        Xc = X[..., channels]
     center = Xc[:, :, CENTER, CENTER, :]   # [N, T, C]
     patch_mean = Xc.mean(axis=(2, 3))       # [N, T, C]
 
@@ -243,11 +256,16 @@ def to_tabular(X: np.ndarray, channels: list[int]) -> tuple[np.ndarray, list[str
         feats = np.concatenate([feats] + extra_feats, axis=1)
         names += extra_names
 
-    ring1_mask = RING1_MASK.astype(np.float32)[None, None, :, :, None]  # [1,1,15,15,1]
-    ring2_mask = RING2_MASK.astype(np.float32)[None, None, :, :, None]
+    r1 = RING1_MASK.astype(np.float32)[None, None, :, :, None]  # [1,1,15,15,1]
+    r2 = RING2_MASK.astype(np.float32)[None, None, :, :, None]
     n_t = Xc.shape[1]
-    ring1_mean = (Xc * ring1_mask).sum(axis=(1, 2, 3)) / (RING1_MASK.sum() * n_t)
-    ring2_mean = (Xc * ring2_mask).sum(axis=(1, 2, 3)) / (RING2_MASK.sum() * n_t)
+    ring1_mean = np.empty((X.shape[0], n_ch), dtype=np.float32)
+    ring2_mean = np.empty((X.shape[0], n_ch), dtype=np.float32)
+    chunk = 4096
+    for s in range(0, X.shape[0], chunk):
+        blk = Xc[s:s + chunk]
+        ring1_mean[s:s + chunk] = (blk * r1).sum(axis=(1, 2, 3)) / (RING1_MASK.sum() * n_t)
+        ring2_mean[s:s + chunk] = (blk * r2).sum(axis=(1, 2, 3)) / (RING2_MASK.sum() * n_t)
     feats = np.concatenate([feats, ring1_mean, ring2_mean], axis=1)
     names += [f"ring1.7x7_mean__{JETT_CHANNEL_NAMES[c]}" for c in channels]
     names += [f"ring2.15x15_mean__{JETT_CHANNEL_NAMES[c]}" for c in channels]
