@@ -66,27 +66,39 @@ def score_day(model, meta, fields: np.ndarray, day_idx: int) -> np.ndarray:
     channels = meta["channels"]
     tab_names = meta["tab_names"]
 
-    # Cell-days: every (r, c) whose patch is fully in-bounds. The tensor
-    # already 0-fills non-land cells, but we only score rows/cols where a full
-    # 15x15 patch exists (mirrors eligible_mask margins, no label dependency).
-    rs = range(d.CENTER, H - d.CENTER)
-    cs = range(d.CENTER, W - d.CENTER)
-    cell_days = np.array([[day_idx, r, c] for r in rs for c in cs], dtype=np.int64)
+    # Edge-pad the fields spatially by CENTER so every grid cell (including
+    # the outer margin) has a full 15x15 patch. Without this, extract() slices
+    # out of bounds and cells within 7 of the grid edge (263 Riau cells) are
+    # left blank. Edge replication is a safe fill: the tensor is already
+    # 0-filled over non-land area and features are spatially smooth.
+    pad = d.CENTER
+    fields_p = np.pad(
+        fields, ((0, 0), (pad, pad), (pad, pad), (0, 0)), mode="edge"
+    )
+
+    # Every grid cell, with coordinates shifted by the pad so extract() reads
+    # the (already padded) centered patch.
+    rs = range(H)
+    cs = range(W)
+    cell_days = np.array([[day_idx, r + pad, c + pad] for r in rs for c in cs],
+                         dtype=np.int64)
     n = len(cell_days)
     logger.info("day %d: %d candidate cells", day_idx, n)
 
-    # Extract all patches for the day at once (bounded by model memory; ~2.5k
-    # cells x 14 x 15 x 15 x 22 float32 ≈ 1.7 GB at full grid — acceptable).
-    # extract() needs a labels array for its y output; we discard it.
-    dummy_labels = np.zeros((fields.shape[0], fields.shape[1], fields.shape[2]), dtype=np.int8)
-    X, _, _ = d.extract(fields, dummy_labels, cell_days)
+    # Extract all patches for the day at once (6,970 cells x 14 x 15 x 15 x 22
+    # float32 ≈ 1.9 GB — acceptable). extract() needs a labels array for its y
+    # output; we discard it. Must match the padded coordinate space.
+    dummy_labels = np.zeros(
+        (fields.shape[0], H + 2 * pad, W + 2 * pad), dtype=np.int8
+    )
+    X, _, _ = d.extract(fields_p, dummy_labels, cell_days)
     X = d.apply_norm(X, meta["norm_stats"])
     Xt, names = d.to_tabular(X, channels)
     assert list(names) == tab_names, "feature order mismatch vs checkpoint"
 
     probs = model.predict_proba(Xt)[:, 1]
     for (_, r, c), p in zip(cell_days, probs):
-        risk[r, c] = p
+        risk[r - pad, c - pad] = p
     return risk
 
 
