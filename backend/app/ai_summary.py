@@ -8,16 +8,16 @@ import config
 from app.predictor import predict_day
 from app.simulate import summarize
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
 
 if TYPE_CHECKING:
-    from backend.rag.openai_client import OpenAIClient
+    from rag.openai_client import OpenAIClient
 
 
-_RAG_CONTEXT_DIR = _REPO_ROOT / "backend" / "rag" / "context"
-_RAG_INDEX_FILE = _REPO_ROOT / "backend" / "rag" / "index" / "rag_index.json"
+_RAG_CONTEXT_DIR = _BACKEND_ROOT / "rag" / "context"
+_RAG_INDEX_FILE = _BACKEND_ROOT / "rag" / "index" / "rag_index.json"
 _WEEK_DAYS = tuple(range(1, 8))
 
 
@@ -135,7 +135,7 @@ def _template_answer(question: str, stats: dict) -> str:
 
 
 def _build_openai_client() -> "OpenAIClient":
-    from backend.rag.openai_client import OpenAIClient
+    from rag.openai_client import OpenAIClient
 
     if not config.OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY belum diisi")
@@ -146,7 +146,7 @@ def _maybe_build_rag_index(client: "OpenAIClient") -> None:
     if _RAG_INDEX_FILE.exists():
         return
 
-    from backend.rag.rag_engine import build_index
+    from rag.rag_engine import build_index
 
     build_index(
         client=client,
@@ -167,7 +167,7 @@ def _retrieve_regulation_context(
     """
     try:
         _maybe_build_rag_index(client)
-        from backend.rag.rag_engine import retrieve_relevant_chunks
+        from rag.rag_engine import retrieve_relevant_chunks
 
         rag_query = (
             f"Pertanyaan pengguna: {question}\n"
