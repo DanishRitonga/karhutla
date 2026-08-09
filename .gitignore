@@ -7,11 +7,18 @@ __pycache__/
 dist/
 build/
 
+# Secrets — never commit tokens
+.env
+
 # Large ingested CSVs — regenerated from ingest scripts
 data/output/chirpsv3/
 data/output/sentinel1/
 data/output/sentinel1_filled/
 data/output/viirs/
+
+# Raw VIIRS downloads (1.7 GB zips) + extracted FIRMS CSVs
+data/raw/
+real_data/
 
 # LaTeX build artifacts
 *.aux
@@ -24,3 +31,14 @@ data/output/viirs/
 docs-task1/
 docs-task2/
 task1/
+data/output/era5land/
+data/output/dynamic_world/
+
+# Pre-built tensors (1.1 GB) — hosted on HuggingFace, not git
+data/output/tensors/
+
+# Training output dirs
+outputs/
+outputs_env/
+outputs_gpu/
+outputs_tabonly/
