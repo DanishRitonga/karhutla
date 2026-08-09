@@ -6,7 +6,8 @@ project/
   backend/   # Backend (FastAPI)
 ```
 
-Model & dataset (training, upload ke HuggingFace) dikelola terpisah.
+Model & dataset (training, upload ke HuggingFace) dikelola terpisah — lihat
+folder `model/`, `data/`, dan `paper/` untuk pipeline training dan draft paper.
 
 ## Jalankan lokal
 
@@ -61,7 +62,8 @@ dari backend, sudah termasuk AI Weekly Insight dan Ask AI.
   frontmatter di `backend/README.md`) atau Railway/Render/VPS lewat
   `backend/Dockerfile`.
 - **web/** — `npm run build` (isi `.env` dengan URL backend production
-  dulu) → `web/dist/`, siap upload ke static hosting apa pun. `dist/`
-  yang sudah ada di zip ini masih hasil build dengan URL backend lokal.
+  dulu) → `web/dist/`, siap upload ke static hosting apa pun (Vercel, dll).
 
-Detail lengkap ada di README masing-masing folder.
+Detail lengkap ada di README masing-masing folder (`backend/README.md`,
+`web/README.md`). Untuk detail pipeline model & data, lihat folder
+`model/` dan `data/`, dan draft paper di `paper/`.
