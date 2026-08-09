@@ -308,7 +308,7 @@ def main() -> None:
                          subsample=0.8, colsample_bytree=0.8, random_state=args.seed,
                          scale_pos_weight=sum(y_train == 0) / max(sum(y_train == 1), 1),
                          verbose=-1)
-    lgb.fit(X_train_tab, y_train)
+    lgb.fit(X_train_tab, y_train, feature_name=tab_names)
     saved_models["lgbm"] = lgb
     lgb_prob = lgb.predict_proba(X_test_tab)[:, 1]
     lgb_met = evaluate_probs(y_test, lgb_prob)
