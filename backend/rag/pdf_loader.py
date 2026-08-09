@@ -24,7 +24,7 @@ def _resolve_pdf_reader():
             return PdfReader
         except ImportError as exc:
             raise RuntimeError(
-                "PDF reader package not found. Install 'pypdf' to read files in rag/context."
+                "PDF reader package not found. Install 'pypdf' to read files in backend/rag/context."
             ) from exc
 
 

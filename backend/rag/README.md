@@ -1,7 +1,7 @@
-# RAG OpenAI untuk dokumen di rag/context
+# RAG OpenAI untuk dokumen di backend/rag/context
 
 Implementasi ini membuat pipeline RAG sederhana berbasis OpenAI API:
-- ekstraksi teks PDF dari `rag/context`
+- ekstraksi teks PDF dari `backend/rag/context`
 - chunking teks
 - embedding ke OpenAI
 - retrieval top-k dengan cosine similarity
@@ -22,38 +22,38 @@ pip install pypdf
 Dari root project:
 
 ```bash
-python -m rag.main build
+python -m backend.rag.main build
 ```
 
 Tanya ke sistem RAG:
 
 ```bash
-python -m rag.main ask "Apa kewajiban perusahaan sawit terkait pencegahan karhutla?"
+python -m backend.rag.main ask "Apa kewajiban perusahaan sawit terkait pencegahan karhutla?"
 ```
 
 Lihat chunk retrieval saja:
 
 ```bash
-python -m rag.main retrieve "Apa sanksi pidana pembakaran hutan?"
+python -m backend.rag.main retrieve "Apa sanksi pidana pembakaran hutan?"
 ```
 
 Jalankan banyak pertanyaan dari file `.txt` (satu pertanyaan per baris):
 
 ```bash
-python -m rag.main batch --input-file rag/questions.txt
+python -m backend.rag.main batch --input-file backend/rag/questions.txt
 ```
 
-Contoh siap pakai tersedia di `rag/questions_example.txt`.
+Contoh siap pakai tersedia di `backend/rag/questions_example.txt`.
 
 Atau dari file `.csv` (dengan kolom `question`):
 
 ```bash
-python -m rag.main batch --input-file rag/questions.csv --output-file rag/output/hasil.csv
+python -m backend.rag.main batch --input-file backend/rag/questions.csv --output-file backend/rag/output/hasil.csv
 ```
 
 ## Opsi penting
 
-- `--index-file`: lokasi file index JSON (default: `rag/index/rag_index.json`)
+- `--index-file`: lokasi file index JSON (default: `backend/rag/index/rag_index.json`)
 - `--embedding-model`: default `text-embedding-3-small`
 - `--generation-model`: default `gpt-4.1-mini`
 - `--top-k`: jumlah chunk yang diambil (default 5)

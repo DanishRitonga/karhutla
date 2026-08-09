@@ -69,7 +69,7 @@ Frontend tidak pernah menghitung ringkasan sendiri, cuma menampilkan field
   terhadap data, tidak butuh network/API key.
 - **Dengan `OPENAI_API_KEY`**: teks natural dari OpenAI, dengan
   region-summary sebagai konteks dan RAG aktif untuk dokumen di
-  `../rag/context`.
+  `./rag/context`.
   Kalau panggilan API gagal (rate limit, network), otomatis fallback ke
   template — endpoint tidak pernah error ke frontend karena ini.
 

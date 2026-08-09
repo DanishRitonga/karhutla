@@ -18,7 +18,7 @@ from .rag_engine import (
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="RAG over PDFs in rag/context using OpenAI API")
+    parser = argparse.ArgumentParser(description="RAG over PDFs in backend/rag/context using OpenAI API")
     parser.add_argument(
         "--base-url",
         default=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
@@ -106,7 +106,7 @@ def _build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument(
         "--output-file",
         type=Path,
-        default=Path("rag") / "output" / "batch_answers.csv",
+        default=Path(__file__).resolve().parent / "output" / "batch_answers.csv",
         help="Output CSV file for answers",
     )
     batch_parser.add_argument(
