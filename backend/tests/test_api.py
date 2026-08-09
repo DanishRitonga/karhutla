@@ -138,9 +138,9 @@ def test_weekly_insight():
     r = client.get("/api/weekly-insight", params={"day": 3})
     assert r.status_code == 200
     body = r.json()
-    assert body["day"] == 3
+    assert body["day_range"] == "1-7"
     assert len(body["summary"]) > 0
-    assert body["source"] == "template"  # tanpa ANTHROPIC_API_KEY di env test
+    assert body["source"] == "template"  # tanpa OPENAI_API_KEY di env test
 
 
 def test_region_summary_ai_summary_matches_weekly_insight_source():
@@ -154,7 +154,7 @@ def test_ask():
     r = client.post("/api/ask", json={"question": "Kabupaten mana yang paling berisiko?", "day": 3})
     assert r.status_code == 200
     body = r.json()
-    assert body["day"] == 3
+    assert body["day_range"] == "1-7"
     assert len(body["answer"]) > 0
     assert body["source"] == "template"
 
