@@ -198,14 +198,12 @@ def main() -> None:
     logger.info("eligible cell-days: %d (%.1f%% pos)",
                 int(eligible.sum()), 100 * labels[eligible].mean())
     if args.balance == "seasonal":
-        logger.info("using seasonal 1:1 negative matching (margin ±%d days)", args.seasonal_margin)
+        logger.info("using seasonal 1:1 negative matching for TRAIN (margin ±%d days)", args.seasonal_margin)
         train_cd = _sample_seasonal(eligible, labels, years, doys, *args.train, args.n_train, args.seasonal_margin, args.seed)
-        val_cd   = _sample_seasonal(eligible, labels, years, doys, *args.val,   args.n_val,   args.seasonal_margin, args.seed)
-        test_cd  = _sample_seasonal(eligible, labels, years, doys, *args.test,  args.n_test,  args.seasonal_margin, args.seed)
     else:
         train_cd = _sample_cell_days(eligible, labels, years, *args.train, args.n_train, args.pos_frac, args.seed)
-        val_cd   = _sample_cell_days(eligible, labels, years, *args.val,   args.n_val,   args.pos_frac, args.seed)
-        test_cd  = _sample_cell_days(eligible, labels, years, *args.test,  args.n_test,  args.pos_frac, args.seed)
+    val_cd   = _sample_cell_days(eligible, labels, years, *args.val,   args.n_val,   args.pos_frac, args.seed)
+    test_cd  = _sample_cell_days(eligible, labels, years, *args.test,  args.n_test,  args.pos_frac, args.seed)
     logger.info("samples: train=%d val=%d test=%d", len(train_cd), len(val_cd), len(test_cd))
 
     # -- 3. extract patches + tabular features ---------------------------
