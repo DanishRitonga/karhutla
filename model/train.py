@@ -30,9 +30,12 @@ Tabular-only (skip ConvLSTM + Temporal Transformer)::
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
+
+import joblib
 
 _project_root = Path(__file__).resolve().parents[1]
 if str(_project_root) not in sys.path:
@@ -58,6 +61,8 @@ from model.data import (
     JETT_CHANNEL_NAMES,
     JETT_N_CHANNELS,
     FIRE_HISTORY_IDX,
+    T_IN,
+    PATCH,
 )
 from model.models import (
     ConvLSTMHotspot,
@@ -240,6 +245,7 @@ def main() -> None:
     # -- 4. evaluate -----------------------------------------------
     mode = "Env" if args.regime == "env" else "Op"
     results = []
+    saved_models: dict[str, object] = {}
     logger.info("=== %s regime (%d channels) ===", mode, n_ch)
 
     # --- Persistence baseline ---
@@ -251,6 +257,7 @@ def main() -> None:
     if pos_in_tab_features is not None:
         logger.info("  PersistenceBaseline")
         pers = PersistenceBaseline(pos_in_tab_features)
+        saved_models["persistence"] = pers
         pers_probs = pers.predict_proba(X_test_tab)[:, 1]
         pers_met = evaluate_probs(y_test, pers_probs)
         logger.info("    Persist PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
@@ -264,6 +271,7 @@ def main() -> None:
         Xmt, _ = to_tabular(X_train, met_ch)
         mtr = LogisticRegression(max_iter=2000, class_weight="balanced")
         mtr.fit(Xmt, y_train)
+        saved_models["met_lr"] = mtr
         Xmt_test, _ = to_tabular(X_test, met_ch)
         lr_met_prob = mtr.predict_proba(Xmt_test)[:, 1]
         lr_met_met = evaluate_probs(y_test, lr_met_prob)
@@ -275,6 +283,7 @@ def main() -> None:
     logger.info("  Tabular Logistic Regression")
     lr = LogisticRegression(max_iter=2000, class_weight="balanced")
     lr.fit(X_train_tab, y_train)
+    saved_models["lr"] = lr
     lr_prob = lr.predict_proba(X_test_tab)[:, 1]
     lr_met = evaluate_probs(y_test, lr_prob)
     logger.info("    Linear  PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
@@ -286,6 +295,7 @@ def main() -> None:
     rf = RandomForestClassifier(n_estimators=300, max_depth=10, min_samples_leaf=5,
                                 class_weight="balanced_subsample", random_state=args.seed)
     rf.fit(X_train_tab, y_train)
+    saved_models["rf"] = rf
     rf_prob = rf.predict_proba(X_test_tab)[:, 1]
     rf_met = evaluate_probs(y_test, rf_prob)
     logger.info("    RF      PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
@@ -299,6 +309,7 @@ def main() -> None:
                          scale_pos_weight=sum(y_train == 0) / max(sum(y_train == 1), 1),
                          verbose=-1)
     lgb.fit(X_train_tab, y_train)
+    saved_models["lgbm"] = lgb
     lgb_prob = lgb.predict_proba(X_test_tab)[:, 1]
     lgb_met = evaluate_probs(y_test, lgb_prob)
     logger.info("    LGBM    PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
@@ -311,6 +322,7 @@ def main() -> None:
                         subsample=0.8, colsample_bytree=0.8,
                         random_state=args.seed, verbosity=0)
     xgb.fit(X_train_tab, y_train)
+    saved_models["xgb"] = xgb
     xgb_prob = xgb.predict_proba(X_test_tab)[:, 1]
     xgb_met = evaluate_probs(y_test, xgb_prob)
     logger.info("    XGB     PR-AUC=%.3f F1=%.3f Rec=%.3f ROC=%.3f",
@@ -376,6 +388,50 @@ def main() -> None:
     table.to_csv(table_path, index=False, float_format="%.4f")
     logger.info("comparison table → %s", table_path)
     print(table.round(4).to_string(index=False))
+
+    # -- 5b. persist checkpoints + inference metadata -----------------
+    # Save every fitted model as a joblib artifact plus a sidecar JSON with
+    # the exact artifacts inference needs: train-side z-score stats, the
+    # channel layout, tabular feature names, and per-model F1 thresholds.
+    thresholds: dict[str, float] = {}
+    for family, model, met in results:
+        name = model.lower()
+        if family == "Meteorological":
+            key = "met_lr"
+        elif name == "logistic regression":
+            key = "lr"
+        elif name == "random forest":
+            key = "rf"
+        elif name == "lightgbm":
+            key = "lgbm"
+        elif name == "xgboost":
+            key = "xgb"
+        else:
+            continue
+        thresholds[key] = float(met.get("best_threshold", float("nan")))
+    if "lgbm" in thresholds and "xgb" in thresholds and "rf" in thresholds:
+        thresholds["ensemble"] = (thresholds["rf"] + thresholds["lgbm"] + thresholds["xgb"]) / 3.0
+
+    meta = {
+        "regime": args.regime,
+        "n_channels": n_ch,
+        "channels": channels,
+        "norm_stats": norm_stats,
+        "tab_names": tab_names,
+        "t_in": T_IN,
+        "patch": PATCH,
+        "best_thresholds": thresholds,
+        "models_saved": sorted(saved_models.keys()),
+    }
+    meta_path = args.out_dir / f"checkpoint_{regime_label}.json"
+    with open(meta_path, "w") as fh:
+        json.dump(meta, fh, indent=2)
+    logger.info("checkpoint metadata → %s", meta_path)
+
+    for key, model in saved_models.items():
+        model_path = args.out_dir / f"model_{key}_{regime_label}.joblib"
+        joblib.dump(model, model_path)
+        logger.info("saved model → %s", model_path)
 
     # -- 6. explainability plots ------------------------------------
     shim_path = args.out_dir / f"shap_importance_{regime_label}.png"
