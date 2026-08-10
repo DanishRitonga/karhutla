@@ -17,6 +17,13 @@ DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 # grid_cells.geojson asli dari pipeline pengolahan data.
 GRID_PATH = DATA_DIR / "grid_data.json"
 
+# Artefak prakiraan lokal yang dihasilkan prepare.sh di container start.
+# predictor.py / weather.py membaca file ini DULU; HF hanya fallback kalau
+# file lokal tidak ada (mis. belum pernah prepare di dev localhost).
+LOCAL_PREDICTIONS_PATH = DATA_DIR / "predictions.parquet"
+LOCAL_WEATHER_PATH = DATA_DIR / "weather_forecast.parquet"
+LOCAL_WIND_DIR_PATH = DATA_DIR / "weather_wind_dir.parquet"
+
 # ── Sumber data/model asli di HuggingFace (dipakai belakangan) ──────────
 # Set env var ini setelah model & dataset di-upload ke HF Hub. Selama env
 # var ini kosong, backend otomatis pakai mode simulasi (persis seperti

@@ -47,15 +47,18 @@ def clear_cache() -> None:
 
 
 def _weather_forecast_df() -> "pd.DataFrame | None":
-    """Load (dengan TTL) weather_forecast.parquet dari HF model repo."""
+    """Load (dengan TTL) weather_forecast.parquet dari file lokal atau HF model repo."""
     if not config.USE_REAL_MODEL:
         return None
     now = time.time()
     if _cache["forecast"] is None or (now - _cache["loaded_at"]) > _TTL_SECONDS:
-        from app import hf_loader
         try:
-            path = hf_loader.download_model_file("weather_forecast.parquet")
-            df = pd.read_parquet(path)
+            if config.LOCAL_WEATHER_PATH.is_file():
+                df = pd.read_parquet(config.LOCAL_WEATHER_PATH)
+            else:
+                from app import hf_loader
+                path = hf_loader.download_model_file("weather_forecast.parquet")
+                df = pd.read_parquet(path)
         except Exception as exc:
             logger.warning("Gagal memuat weather_forecast.parquet: %s", exc)
             _cache["forecast"] = None
@@ -78,10 +81,13 @@ def _wind_dir_df() -> "pd.DataFrame | None":
         return None
     now = time.time()
     if _cache["wind_dir"] is None or (now - _cache["loaded_at"]) > _TTL_SECONDS:
-        from app import hf_loader
         try:
-            path = hf_loader.download_model_file("weather_wind_dir.parquet")
-            df = pd.read_parquet(path)
+            if config.LOCAL_WIND_DIR_PATH.is_file():
+                df = pd.read_parquet(config.LOCAL_WIND_DIR_PATH)
+            else:
+                from app import hf_loader
+                path = hf_loader.download_model_file("weather_wind_dir.parquet")
+                df = pd.read_parquet(path)
         except Exception:
             _cache["wind_dir"] = None
             _cache["loaded_at"] = now

@@ -50,31 +50,41 @@ def clear_cache() -> None:
 
 
 def _real_predictions_df() -> "pd.DataFrame | None":
-    """Load (dan cache dengan TTL) tabel prediksi asli (cell_idx/day/probability) dari HF."""
+    """Load (dan cache dengan TTL) tabel prediksi asli (cell_idx/day/probability).
+
+    Sumber dibaca dari dua tempat, preferensi lokal dulu:
+      1. config.LOCAL_PREDICTIONS_PATH — parquet yang dibuat prepare.sh di
+         container start (self-sufficient, tanpa unduhan HF saat runtime).
+      2. Fallback: download predictions.parquet dari HF model repo.
+    """
     global _last_load_error
     if not config.USE_REAL_MODEL:
         return None
 
     now = time.time()
     if _cache["df"] is None or (now - _cache["loaded_at"]) > _CACHE_TTL_SECONDS:
-        from app import hf_loader
-        # Sesuaikan nama file dengan yang di-upload ke HF model repo
-        # (lihat model_training/03_generate_predictions.py di pipeline training).
         try:
-            path = hf_loader.download_model_file("predictions.parquet")
-            df = pd.read_parquet(path)
+            if config.LOCAL_PREDICTIONS_PATH.is_file():
+                df = pd.read_parquet(config.LOCAL_PREDICTIONS_PATH)
+            else:
+                from app import hf_loader
+                # Sesuaikan nama file dengan yang di-upload ke HF model repo
+                # (lihat model_training/03_generate_predictions.py di pipeline training).
+                path = hf_loader.download_model_file("predictions.parquet")
+                df = pd.read_parquet(path)
         except Exception as exc:
-            # Network/auth/file-not-found dari HF -- fallback ke simulasi
-            # dengan alasan yang sama seperti schema rusak di bawah, jangan
-            # biarkan endpoint prediksi 500 karena HF sedang bermasalah.
+            # File lokal rusak / network/auth/file-not-found dari HF --
+            # fallback ke simulasi dengan alasan yang sama seperti schema rusak
+            # di bawah, jangan biarkan endpoint prediksi 500 karena HF sedang
+            # bermasalah.
             logger.error(
-                "Gagal mengambil/membaca predictions.parquet dari HF: %s. "
+                "Gagal mengambil/membaca predictions.parquet: %s. "
                 "Fallback ke mode simulasi.", exc,
             )
             _cache["df"] = None
             _cache["loaded_at"] = now
             _day_cache.clear()
-            _last_load_error = f"gagal fetch dari HF ({type(exc).__name__}): {exc}"
+            _last_load_error = f"gagal baca prediksi ({type(exc).__name__}): {exc}"
             return None
 
         # Validasi schema: kalau pipeline training berubah nama kolom (mis.
