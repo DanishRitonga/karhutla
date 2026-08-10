@@ -393,6 +393,53 @@ input {
   stroke-width: 1.4;
 }
 
+/* --- Kerangka muat (skeleton) -------------------------------------------
+   Abu saja. Ramp --r1..--r4 sengaja TIDAK dipakai di sini: itu skala risiko,
+   dan kotak kosong berwarna oranye akan terbaca sebagai "risiko tinggi"
+   sebelum satu angka pun sampai. */
+
+.sk {
+  background: var(--surface-sunk);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Kilau lewat pseudo-element, bukan animasi background-position: yang kedua
+   memaksa repaint seluruh kotak tiap frame. */
+.sk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: sk-sweep 1.3s ease-in-out infinite;
+}
+
+@keyframes sk-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Sel peta: <rect> tidak bisa memuat pseudo-element, jadi denyutnya lewat
+   opacity. Nilai dasar 0.5 dipilih supaya tetap terbaca saat animasi mati
+   (prefers-reduced-motion di bawah). */
+.sk-cell {
+  fill: var(--surface-sunk);
+  opacity: 0.5;
+  animation: sk-pulse 1.7s ease-in-out infinite;
+}
+
+@keyframes sk-pulse {
+  0%,
+  100% {
+    opacity: 0.34;
+  }
+  50% {
+    opacity: 0.82;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

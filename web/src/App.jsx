@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { MapSkeleton, RankingSkeleton, SkeletonBlock, SummarySkeleton, TextSkeleton } from "./Skeletons";
+
 /* ==========================================================================
    Karhutla Early Warning — antarmuka operasional
 
@@ -377,7 +379,12 @@ export default function Dashboard() {
     );
   }
 
-  const loading = !cells || !proj || !summary;
+  /* Dipisah per panel, bukan satu bendera untuk seluruh halaman. Peta dan
+     rail memang datang dari empat permintaan berbeda; menyatukannya jadi satu
+     `loading` berarti panel yang datanya sudah tiba ikut ditahan menunggu
+     yang paling lambat. */
+  const mapLoading = !cells || !proj;
+  const summaryLoading = !summary;
 
   return (
     <div className="app">
@@ -393,73 +400,82 @@ export default function Dashboard() {
           </p>
         </header>
 
-        {loading ? (
-          <p style={{ color: "var(--ink-mute)" }}>Memuat grid dan prediksi…</p>
-        ) : (
-          <div className="layout">
-            {/* ---- Peta ---------------------------------------------------- */}
-            <div className="panel mappanel">
-              <div className="panel-head">
-                <span className="eyebrow">Peta risiko · grid 5 km</span>
-                <span className="num" style={{ fontSize: 11.5, color: "var(--ink-mute)" }}>
-                  {cells.length} sel
-                </span>
-              </div>
-              <div className="panel-body mapbody">
-                <div className="mapwrap">
+        <div className="layout">
+          {/* ---- Peta ---------------------------------------------------- */}
+          <div className="panel mappanel">
+            <div className="panel-head">
+              <span className="eyebrow">Peta risiko · grid 5 km</span>
+              <span className="num" style={{ fontSize: 11.5, color: "var(--ink-mute)" }}>
+                {mapLoading ? <SkeletonBlock w={44} h={10} /> : `${cells.length} sel`}
+              </span>
+            </div>
+            <div className="panel-body mapbody">
+              <div className="mapwrap">
+                {mapLoading ? (
+                  <MapSkeleton proj={proj} />
+                ) : (
                   <RiauMap
                     proj={proj}
                     cells={cells}
                     selectedId={selected?.cell_idx}
                     onSelect={setSelected}
                   />
-                </div>
-                <div className="legendwrap">
-                  <Legend />
-                </div>
+                )}
+              </div>
+              <div className="legendwrap">
+                <Legend />
+              </div>
+            </div>
+          </div>
+
+          {/* ---- Rail ---------------------------------------------------- */}
+          <div className="rail">
+            <div className="panel">
+              <div className="panel-head">
+                <span className="eyebrow">Ringkasan provinsi</span>
+              </div>
+              <div className="panel-body" style={{ paddingTop: 4, paddingBottom: 6 }}>
+                {summaryLoading ? (
+                  <SummarySkeleton />
+                ) : (
+                  <>
+                    <div className="row">
+                      <span className="row-label">Sel risiko tinggi ke atas</span>
+                      <span className="num">
+                        {summary.high_risk_cells}
+                        <span style={{ color: "var(--ink-faint)" }}>/{summary.total_cells}</span>
+                      </span>
+                    </div>
+                    <div className="row">
+                      <span className="row-label">Sel kategori sangat tinggi</span>
+                      <span className="num">{summary.predicted_hotspots}</span>
+                    </div>
+                    <div className="row">
+                      <span className="row-label">Kabupaten teratas</span>
+                      <span>{topRegion?.name ?? "—"}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* ---- Rail ---------------------------------------------------- */}
-            <div className="rail">
-              <div className="panel">
-                <div className="panel-head">
-                  <span className="eyebrow">Ringkasan provinsi</span>
-                </div>
-                <div className="panel-body" style={{ paddingTop: 4, paddingBottom: 6 }}>
-                  <div className="row">
-                    <span className="row-label">Sel risiko tinggi ke atas</span>
-                    <span className="num">
-                      {summary.high_risk_cells}
-                      <span style={{ color: "var(--ink-faint)" }}>/{summary.total_cells}</span>
-                    </span>
-                  </div>
-                  <div className="row">
-                    <span className="row-label">Sel kategori sangat tinggi</span>
-                    <span className="num">{summary.predicted_hotspots}</span>
-                  </div>
-                  <div className="row">
-                    <span className="row-label">Kabupaten teratas</span>
-                    <span>{topRegion?.name ?? "—"}</span>
-                  </div>
-                </div>
+            <div className="panel">
+              <div className="panel-head">
+                <span className="eyebrow">Sel terpilih</span>
               </div>
-
-              <div className="panel">
-                <div className="panel-head">
-                  <span className="eyebrow">Sel terpilih</span>
-                </div>
-                <div className="panel-body" ref={detailRef}>
-                  <CellDetail cell={selected} />
-                </div>
+              <div className="panel-body" ref={detailRef}>
+                <CellDetail cell={selected} />
               </div>
+            </div>
 
-              <div className="panel">
-                <div className="panel-head">
-                  <span className="eyebrow">Peringkat kabupaten</span>
-                </div>
-                <div className="panel-body" style={{ paddingTop: 6, paddingBottom: 8 }}>
-                  {summary.ranking.slice(0, 6).map((r) => (
+            <div className="panel">
+              <div className="panel-head">
+                <span className="eyebrow">Peringkat kabupaten</span>
+              </div>
+              <div className="panel-body" style={{ paddingTop: 6, paddingBottom: 8 }}>
+                {summaryLoading && <RankingSkeleton rows={6} />}
+                {!summaryLoading &&
+                  summary.ranking.slice(0, 6).map((r) => (
                     <button
                       key={r.name}
                       onClick={() => focusRegion(r.name)}
@@ -497,36 +513,46 @@ export default function Dashboard() {
                       </span>
                     </button>
                   ))}
-                </div>
               </div>
+            </div>
 
-              <div className="panel">
-                <div className="panel-head">
-                  <span className="eyebrow">Ringkasan otomatis</span>
-                </div>
-                <div className="panel-body">
+            <div className="panel">
+              <div className="panel-head">
+                <span className="eyebrow">Ringkasan otomatis</span>
+              </div>
+              <div className="panel-body">
+                {summaryLoading ? (
+                  <TextSkeleton lines={3} />
+                ) : (
                   <p style={{ margin: 0 }}>{summary.ai_summary}</p>
-                </div>
+                )}
               </div>
+            </div>
 
-              <div className="panel">
-                <div className="panel-head">
-                  <span className="eyebrow">Tanya data ini</span>
+            <div className="panel">
+              <div className="panel-head">
+                <span className="eyebrow">Tanya data ini</span>
+              </div>
+              <div className="panel-body">
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    className="field"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && ask()}
+                    placeholder="Kabupaten mana yang paling aman?"
+                    aria-label="Pertanyaan tentang data prediksi"
+                  />
+                  <button
+                    className="btn"
+                    onClick={ask}
+                    /* Ditutup selama data belum lengkap: jawabannya disusun
+                       dari angka di halaman ini, dan angka itu belum ada. */
+                    disabled={asking || summaryLoading || !question.trim()}
+                  >
+                    {asking ? "…" : "Tanya"}
+                  </button>
                 </div>
-                <div className="panel-body">
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      className="field"
-                      value={question}
-                      onChange={(e) => setQuestion(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && ask()}
-                      placeholder="Kabupaten mana yang paling aman?"
-                      aria-label="Pertanyaan tentang data prediksi"
-                    />
-                    <button className="btn" onClick={ask} disabled={asking || !question.trim()}>
-                      {asking ? "…" : "Tanya"}
-                    </button>
-                  </div>
                   <p style={{ margin: "7px 0 0", fontSize: 12, color: "var(--ink-mute)" }}>
                     Jawaban disusun hanya dari angka di halaman ini.
                   </p>
@@ -544,7 +570,6 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-        )}
 
         <footer className="pagefoot">
           Masukan model: 14 hari terakhir (VIIRS, ERA5-Land, CHIRPS, Sentinel-1, Dynamic
