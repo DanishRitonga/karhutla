@@ -6,7 +6,7 @@ Pipeline end-to-end: **ingest → tensor assembly → training → inference →
 
 | Komponen | Repo | Status |
 |---|---|---|
-| Kode | `github.com/DanishRitonga/karhutla` | branch `dnsh` |
+| Kode | `github.com/DanishRitonga/karhutla` | branch `master` |
 | Data mentah + tensor | HF dataset `danishritonga/karhutla` | `raw/` (8 sumber) + `tensors/` |
 | Model + artefak | HF model `danishritonga/karhutla` | checkpoint + predictions/weather parquet |
 | Aplikasi live | HF Space `danishritonga/karhutla` | https://danishritonga-karhutla.hf.space/ |
@@ -20,7 +20,7 @@ Cara tercepat untuk menjalankan model tanpa mengulang ingest puluhan jam:
 ```bash
 # 1. Clone + setup
 git clone https://github.com/DanishRitonga/karhutla.git
-cd karhutla && git checkout dnsh
+cd karhutla
 uv sync --python 3.12
 uv run --python 3.12 python -c "import model.data as d; d._ensure_tensors_local(d.Path('data/output/tensors'))"
 ```
