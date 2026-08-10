@@ -12,7 +12,11 @@
 #   HF_TOKEN=hf_xxx ./scripts/deploy_space.sh            # push to prod space
 #   ./scripts/deploy_space.sh --dry-run                  # show what would change
 #
+<<<<<<< HEAD
+# Requires: git, rsync, git-lfs. Auth: HF_TOKEN env var (or a saved git credential).
+=======
 # Requires: git, rsync. Auth: HF_TOKEN env var (or a saved git credential).
+>>>>>>> origin/master
 
 set -euo pipefail
 
@@ -38,23 +42,64 @@ else
     PUSH_URL="${SPACE_URL}"
 fi
 
+<<<<<<< HEAD
+if ! git lfs version >/dev/null 2>&1; then
+        cat <<'EOF'
+ERROR: git-lfs tidak ditemukan, padahal diperlukan untuk mendorong PDF konteks ke Hugging Face Space.
+
+Install dulu git-lfs, lalu ulangi deploy:
+    Ubuntu/Debian: sudo apt-get update && sudo apt-get install -y git-lfs
+    Arch Linux:     sudo pacman -S git-lfs
+
+Setelah install (sekali saja):
+    git lfs install
+EOF
+        exit 1
+fi
+
 echo "==> Cloning ${SPACE_URL} ..."
 git clone --quiet "${SPACE_URL}" "${TMP_DIR}/space"
 
+echo "==> Initializing git-lfs in temporary Space clone ..."
+git -C "${TMP_DIR}/space" lfs install --local --force >/dev/null
+
+=======
+echo "==> Cloning ${SPACE_URL} ..."
+git clone --quiet "${SPACE_URL}" "${TMP_DIR}/space"
+
+>>>>>>> origin/master
 echo "==> Syncing ${BACKEND_DIR}/ -> space root (rsync --delete) ..."
 rsync -a --delete \
     --exclude '.git/' \
     --exclude '__pycache__/' \
     --exclude '.cache/' \
+<<<<<<< HEAD
+    --exclude 'rag/index/rag_index.json' \
+    --exclude 'rag/output/' \
+    "${BACKEND_DIR}/" "${TMP_DIR}/space/"
+
+if compgen -G "${TMP_DIR}/space/rag/context/*.pdf" >/dev/null; then
+    # Re-apply clean filter so legacy non-LFS tracked PDFs become LFS pointers.
+    git -C "${TMP_DIR}/space" add --renormalize rag/context
+fi
+
+git -C "${TMP_DIR}/space" add -A
+
+if git -C "${TMP_DIR}/space" diff --cached --quiet; then
+=======
     "${BACKEND_DIR}/" "${TMP_DIR}/space/"
 
 if git -C "${TMP_DIR}/space" diff --quiet && \
    git -C "${TMP_DIR}/space" diff --cached --quiet; then
+>>>>>>> origin/master
     echo "==> No changes. Space is already up to date."
     exit 0
 fi
 
+<<<<<<< HEAD
+=======
 git -C "${TMP_DIR}/space" add -A
+>>>>>>> origin/master
 git -C "${TMP_DIR}/space" status --short
 
 if [[ "${DRY_RUN}" -eq 1 ]]; then

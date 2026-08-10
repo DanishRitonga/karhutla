@@ -1,14 +1,14 @@
 """Shared GEE infrastructure for Riau karhutla feature ingestion.
 
-Private module — imported by ``chirpsv3.py`` and ``sentinel1.py``.
+Private module — imported by ``era5land.py`` and ``dynamic_world.py``.
 
 Provides:
-  * ``GeeConfig``         — dataclass with grid paths, project, sampling scales.
-  * ``RiauGridCells``     — loads the fixed 5 km equal-area grid as a GEE
-                             FeatureCollection.
-  * ``GeeClient``         — Earth Engine auth, initialisation, reduceRegions.
-  * ``ALBERS_ID_AEAC_PROJ4`` — proj4 string shared with grid_definition.py.
-  * ``_iter_months``, ``_iter_windows`` — calendar iteration helpers.
+* ``GeeConfig``         — dataclass with grid paths, project, sampling scales.
+* ``RiauGridCells``     — loads the fixed 5 km equal-area grid as a GEE
+                            FeatureCollection.
+* ``GeeClient``         — Earth Engine auth, initialisation, reduceRegions.
+* ``ALBERS_ID_AEAC_PROJ4`` — proj4 string shared with grid_definition.py.
+* ``_iter_months``, ``_iter_windows`` — calendar iteration helpers.
 """
 
 from __future__ import annotations
@@ -112,8 +112,9 @@ class RiauGridCells:
 
     def feature_collection(self):
         if self._fc is None:
-            self._fc = self.ee.FeatureCollection(self._features_wgs())
-            logger.info("Built GEE FeatureCollection with %d cell polygons", len(self._features_wgs()))
+            feats = self._features_wgs()
+            self._fc = self.ee.FeatureCollection(feats)
+            logger.info("Built GEE FeatureCollection with %d cell polygons", len(feats))
         return self._fc
 
     def _features_wgs(self) -> list[dict]:
