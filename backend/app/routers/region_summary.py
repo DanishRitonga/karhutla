@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from app.predictor import predict_day
 from app.simulate import summarize
 from app.ai_summary import weekly_insight_from_stats
@@ -39,6 +39,10 @@ def region_summary(day: int = Query(1, ge=1, le=7)):
 def region_summary_detail(region_name: str, day: int = Query(1, ge=1, le=7)):
     """Detail satu kabupaten, dipakai saat klik nama region (mis. Bengkalis)."""
     rows = [r for r in predict_day(day) if r["region"] == region_name]
+    if not rows:
+        # Tanpa ini, nama kabupaten yang salah ketik mengembalikan 200 berisi
+        # nol semua -- terbaca seperti "wilayah ini aman", bukan "tidak ada".
+        raise HTTPException(status_code=404, detail=f"Region tidak dikenal: {region_name}")
     stats = summarize(rows)
     vhigh = sum(1 for r in rows if r["level"] == "vhigh")
     high = sum(1 for r in rows if r["level"] == "high")

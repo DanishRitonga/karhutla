@@ -15,6 +15,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 import config
 from app.routers import grid, hotspots, predictions, region_summary, explainability, ai
@@ -24,6 +25,10 @@ app = FastAPI(
     description="Backend untuk dashboard prediksi hotspot karhutla Provinsi Riau.",
     version="0.1.0",
 )
+
+# Response JSON di sini sangat kompresibel (grid, prediksi 3.598 sel).
+# Tanpa ini, /api/predictions saja hampir 500 KB per pemuatan halaman.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.add_middleware(
     CORSMiddleware,

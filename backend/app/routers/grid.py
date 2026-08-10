@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.grid import decode_cells, load_grid_raw, cell_bbox
+from app.grid import decode_cells, load_grid_raw, cell_bbox, simplified_outline
 from app.schemas import GridCellOut
 
 router = APIRouter(tags=["grid"])
@@ -19,7 +19,10 @@ def get_grid_meta():
         "cell": grid["cell"],
         "cols": grid["cols"],
         "rows": grid["rows"],
-        "outline": grid["outline"],
+        # Outline disederhanakan (lihat app.grid.simplified_outline): outline
+        # mentah berisi 163.369 titik = 3,98 MB, diunduh ulang tiap kali
+        # dashboard dibuka, untuk peta selebar 640 px.
+        "outline": simplified_outline(),
         "regions": grid["regions"],
     }
 

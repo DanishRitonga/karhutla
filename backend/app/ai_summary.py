@@ -4,9 +4,23 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import logging
+
 import config
 from app.predictor import predict_day
 from app.simulate import summarize
+
+logger = logging.getLogger("karhutla.ai_summary")
+
+# predict_day() mengembalikan kunci level mentah ("low"/"mid"/"high"/"vhigh").
+# Kunci itu untuk mesin; tanpa peta ini jawaban ke pengguna berbunyi
+# "kategori risiko vhigh".
+LEVEL_LABEL = {
+    "low": "rendah",
+    "mid": "sedang",
+    "high": "tinggi",
+    "vhigh": "sangat tinggi",
+}
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(_BACKEND_ROOT) not in sys.path:
@@ -26,60 +40,46 @@ def _stats_for_day(day: int) -> dict:
     return summarize(rows)
 
 
-def _stats_for_week() -> dict:
-    day_stats = [_stats_for_day(day) for day in _WEEK_DAYS]
+def _stats_for_window() -> dict:
+    """Statistik untuk SATU jendela prakiraan (t, t+7].
 
-    by_region: dict[str, dict] = {}
-    for ds in day_stats:
-        for r in ds.get("ranking", []):
-            name = r["name"]
-            item = by_region.setdefault(
-                name,
-                {
-                    "name": name,
-                    "high": 0,
-                    "total": 0,
-                    "weighted_avg_sum": 0.0,
-                },
-            )
-            total = int(r.get("total", 0))
-            item["high"] += int(r.get("high", 0))
-            item["total"] += total
-            item["weighted_avg_sum"] += float(r.get("avg", 0.0)) * total
+    Sebelumnya fungsi ini menjumlahkan predict_day(1..7) menjadi "akumulasi
+    grid-hari". Itu keliru untuk model ini: labelnya (t, t+7] menghasilkan satu
+    probabilitas untuk seluruh jendela, jadi predict_day(1) sampai (7)
+    mengembalikan angka yang identik. Menjumlahkannya hanya mengalikan setiap
+    hitungan dengan 7 tanpa menambah informasi -- 25.186 itu persis 3.598 x 7 --
+    sekaligus menghidupkan lagi kesan bahwa model punya resolusi harian.
 
-    ranking: list[dict] = []
-    for item in by_region.values():
-        total = item["total"]
-        avg = (item["weighted_avg_sum"] / total) if total > 0 else 0.0
-        ranking.append(
-            {
-                "name": item["name"],
-                "avg": avg,
-                "high": item["high"],
-                "total": total,
-            }
-        )
-    ranking.sort(key=lambda r: (r["avg"], r["high"]), reverse=True)
-
-    peak_idx = max(range(len(day_stats)), key=lambda i: day_stats[i].get("high", 0))
-    return {
-        "total": sum(int(ds.get("total", 0)) for ds in day_stats),
-        "high": sum(int(ds.get("high", 0)) for ds in day_stats),
-        "ranking": ranking,
-        "peak_day": _WEEK_DAYS[peak_idx],
-        "peak_high": int(day_stats[peak_idx].get("high", 0)),
-    }
+    `peak_day` ikut dibuang karena alasan yang sama: kalau ketujuh hari
+    identik, max() selalu mengembalikan hari yang sama, sehingga "hari puncak
+    risiko" adalah artefak argmax, bukan temuan.
+    """
+    return _stats_for_day(1)
 
 
-def _build_context(stats: dict) -> str:
+def _build_context(stats: dict, cell: dict | None = None) -> str:
     lines = [
-        f"Data prediksi risiko karhutla Provinsi Riau, horizon 1 hingga 7 hari kedepan:",
-        f"Akumulasi grid-hari: {stats['total']}, akumulasi grid-hari berisiko tinggi/sangat tinggi: {stats['high']}",
-        f"Hari puncak risiko: T+{stats.get('peak_day', 1)} dengan {stats.get('peak_high', 0)} grid berisiko tinggi/sangat tinggi.",
-        "Ranking kabupaten (skor rata-rata mingguan tertimbang, grid tinggi/total akumulatif):",
+        "Data prediksi risiko karhutla Provinsi Riau, jendela 1 hingga 7 hari ke depan:",
+        f"Total grid: {stats['total']}, grid berisiko tinggi/sangat tinggi: {stats['high']}",
+        # Model memberi SATU probabilitas untuk seluruh jendela 7 hari. Tidak
+        # ada resolusi harian, jadi tidak ada "hari puncak" yang bisa dilaporkan.
+        "Catatan: model tidak memberi resolusi harian. Jangan menyebut hari "
+        "tertentu (mis. T+1, hari kedua) sebagai puncak risiko.",
+        "Ranking kabupaten (skor rata-rata, grid tinggi/total):",
     ]
     for r in stats["ranking"][:6]:
-        lines.append(f"- {r['name']}: skor {r['avg']:.2f}, {r['high']}/{r['total']} grid-hari berisiko tinggi")
+        lines.append(f"- {r['name']}: skor {r['avg']:.2f}, {r['high']}/{r['total']} grid berisiko tinggi")
+
+    # Grid yang sedang dipilih user di peta. Tanpa baris ini, LLM tidak pernah
+    # tahu grid mana yang diklik, sehingga pertanyaan seperti "apa yang terjadi
+    # di lokasi ini" selalu dijawab dari ranking provinsi -- berapa pun grid
+    # yang ditekan, jawabannya sama.
+    if cell:
+        lines.append(
+            f"\nGrid yang sedang dipilih user di peta: {cell['id']} "
+            f"({cell['region']}), skor {cell['score']:.2f}, "
+            f"kategori {LEVEL_LABEL.get(cell['level'], cell['level'])}."
+        )
     return "\n".join(lines)
 
 
@@ -93,45 +93,77 @@ def _template_weekly_insight(stats: dict) -> str:
     top = ranking[0]
     parts = [
         f"Pada horizon 1 hingga 7 hari ke depan, risiko paling konsisten terkonsentrasi di {top['name']} "
-        f"dengan {top['high']} dari {top['total']} akumulasi grid-hari berkategori tinggi/sangat tinggi."
+        f"dengan {top['high']} dari {top['total']} grid berkategori tinggi/sangat tinggi."
     ]
     second = ranking[1] if len(ranking) > 1 else None
     if second and second["high"] > 0:
         parts.append(
-            f"{second['name']} juga menunjukkan risiko yang perlu dipantau, dengan {second['high']} grid-hari pada kategori tinggi."
+            f"{second['name']} juga menunjukkan risiko yang perlu dipantau, dengan {second['high']} grid pada kategori tinggi."
         )
     parts.append(
-        f"Secara keseluruhan, {stats['high']} dari {stats['total']} akumulasi grid-hari di Riau berisiko tinggi hingga sangat tinggi."
+        f"Secara keseluruhan, {stats['high']} dari {stats['total']} grid di Riau berisiko tinggi hingga sangat tinggi."
     )
     return " ".join(parts)
 
 
-def _template_answer(question: str, stats: dict) -> str:
+def _template_answer(question: str, stats: dict, cell: dict | None = None) -> str:
     ranking = stats["ranking"]
     if not ranking:
         return "Belum ada data yang cukup untuk menjawab pertanyaan ini."
 
     q = question.lower()
 
-    if any(kw in q for kw in ["aman", "teraman", "risiko rendah", "paling rendah", "terendah"]):
+    # Dua intent di bawah memang berskala provinsi, jadi tetap dijawab dari
+    # ranking walaupun ada grid yang sedang dipilih.
+    intent_teraman = any(
+        kw in q for kw in ["aman", "teraman", "risiko rendah", "paling rendah", "terendah"]
+    )
+    intent_hitung_grid = "grid" in q and any(
+        kw in q for kw in ["berapa", "jumlah", "total", "ada berapa"]
+    )
+
+    # Selain itu: kalau user sudah mengklik satu grid, pertanyaannya hampir
+    # pasti tentang grid itu. Mencocokkan frasa hafalan seperti "lokasi ini"
+    # saja terlalu rapuh -- "kenapa merah" akan lolos dan dijawab dengan angka
+    # provinsi, yang justru bug yang sedang diperbaiki.
+    if cell and not intent_teraman and not intent_hitung_grid:
+        level = LEVEL_LABEL.get(cell["level"], cell["level"])
+        return (
+            f"Grid {cell['id']} di {cell['region']} berada pada kategori risiko "
+            f"{level} dengan skor {cell['score']:.2f} untuk jendela 1 hingga 7 hari ke depan."
+        )
+
+    if intent_teraman:
         safest = min(ranking, key=lambda r: r["avg"])
         return (
             f"Wilayah dengan risiko terendah pada horizon 1 hingga 7 hari ke depan adalah {safest['name']} "
-            f"(skor rata-rata {safest['avg']:.2f}, {safest['high']} dari {safest['total']} grid-hari berkategori tinggi)."
+            f"(skor rata-rata {safest['avg']:.2f}, {safest['high']} dari {safest['total']} grid berkategori tinggi)."
         )
 
-    if any(kw in q for kw in ["berapa", "jumlah grid", "ada berapa", "total grid"]):
+    if intent_hitung_grid:
         return (
-            f"Pada horizon 1 hingga 7 hari ke depan, ada {stats['high']} dari {stats['total']} akumulasi grid-hari "
+            f"Pada horizon 1 hingga 7 hari ke depan, ada {stats['high']} dari {stats['total']} grid "
             f"di Riau yang berkategori risiko tinggi atau sangat tinggi."
         )
 
     top = ranking[0]
     return (
         f"Berdasarkan prediksi horizon 1 hingga 7 hari ke depan, {top['name']} adalah wilayah dengan risiko "
-        f"tertinggi ({top['high']} dari {top['total']} grid-hari berkategori tinggi/sangat tinggi, "
+        f"tertinggi ({top['high']} dari {top['total']} grid berkategori tinggi/sangat tinggi, "
         f"skor rata-rata {top['avg']:.2f})."
     )
+
+
+def _find_cell(cell_idx: str) -> dict | None:
+    """Cari satu grid dari hasil predict_day(1) berdasarkan cell_idx.
+
+    predict_day() sudah menghitung seluruh grid dan hasilnya di-cache, jadi ini
+    hanya linear scan atas list di memori (~3.600 baris, di bawah 1 ms).
+    """
+    for row in predict_day(1):
+        if row["id"] == cell_idx:
+            return row
+    return None
 
 
 def _build_openai_client() -> "OpenAIClient":
@@ -142,17 +174,47 @@ def _build_openai_client() -> "OpenAIClient":
     return OpenAIClient(api_key=config.OPENAI_API_KEY, base_url=config.OPENAI_BASE_URL)
 
 
-def _maybe_build_rag_index(client: "OpenAIClient") -> None:
-    if _RAG_INDEX_FILE.exists():
-        return
+_RAG_MISSING_WARNED = False
 
+
+def _rag_index_ready() -> bool:
+    """Apakah index RAG siap dipakai untuk request ini.
+
+    SENGAJA tidak membangun index di sini. Membangunnya berarti parsing 5 PDF
+    (1395 halaman, ~10 detik) lalu 35 panggilan embedding berurutan -- semuanya
+    di dalam satu HTTP request. Request pertama sesudah container baru akan
+    menggantung bermenit-menit, dan container HuggingFace Space selalu baru
+    setiap kali Space bangun dari tidur.
+
+    Index dibangun di luar jalur request: `python scripts/build_rag_index.py`
+    lalu commit hasilnya, atau set RAG_AUTOBUILD=1 supaya dibangun di latar
+    belakang saat startup (lihat main.py).
+    """
+    global _RAG_MISSING_WARNED
+    if _RAG_INDEX_FILE.exists():
+        return True
+    if not _RAG_MISSING_WARNED:
+        _RAG_MISSING_WARNED = True
+        logger.warning(
+            "index RAG belum ada di %s -- jawaban LLM berjalan tanpa konteks "
+            "regulasi. Jalankan scripts/build_rag_index.py lalu commit hasilnya.",
+            _RAG_INDEX_FILE,
+        )
+    return False
+
+
+def build_rag_index_now() -> None:
+    """Bangun index RAG. Dipanggil dari script atau startup, bukan dari request."""
     from rag.rag_engine import build_index
 
+    client = _build_openai_client()
+    logger.info("membangun index RAG dari %s ...", _RAG_CONTEXT_DIR)
     build_index(
         client=client,
         context_dir=_RAG_CONTEXT_DIR,
         index_file=_RAG_INDEX_FILE,
     )
+    logger.info("index RAG selesai: %s", _RAG_INDEX_FILE)
 
 
 def _retrieve_regulation_context(
@@ -165,14 +227,16 @@ def _retrieve_regulation_context(
     Ambil konteks regulasi terbaik dari index RAG untuk ditambahkan ke prompt.
     Jika retrieval gagal / tidak ada konteks, cukup kembalikan string kosong.
     """
+    if not _rag_index_ready():
+        return ""
+
     try:
-        _maybe_build_rag_index(client)
         from rag.rag_engine import retrieve_relevant_chunks
 
         rag_query = (
             f"Pertanyaan pengguna: {question}\n"
             "Horizon backend saat ini: 1 hingga 7 hari ke depan (mingguan)\n"
-            f"Konteks ringkas backend mingguan: {stats['high']} dari {stats['total']} akumulasi grid-hari berisiko tinggi/sangat tinggi."
+            f"Konteks ringkas backend mingguan: {stats['high']} dari {stats['total']} grid berisiko tinggi/sangat tinggi."
         )
         retrieved = retrieve_relevant_chunks(
             question=rag_query,
@@ -218,9 +282,9 @@ def _call_llm(system_context: str, instruction: str) -> str:
     return answer.strip()
 
 
-def _call_rag_answer(question: str, stats: dict) -> tuple[str, str]:
+def _call_rag_answer(question: str, stats: dict, cell: dict | None = None) -> tuple[str, str]:
     client = _build_openai_client()
-    data_context = _build_context(stats)
+    data_context = _build_context(stats, cell)
 
     from app.weather import build_weather_context
 
@@ -259,15 +323,17 @@ def weekly_insight_from_stats(stats: dict) -> tuple[str, str]:
 
 
 def weekly_insight() -> tuple[str, str]:
-    stats = _stats_for_week()
+    stats = _stats_for_window()
     return weekly_insight_from_stats(stats=stats)
 
 
-def answer_question(question: str) -> tuple[str, str]:
-    stats = _stats_for_week()
+def answer_question(question: str, cell_idx: str | None = None) -> tuple[str, str]:
+    stats = _stats_for_window()
+    cell = _find_cell(cell_idx) if cell_idx else None
+
     if config.USE_LLM_SUMMARY:
         try:
-            return _call_rag_answer(question=question, stats=stats)
+            return _call_rag_answer(question=question, stats=stats, cell=cell)
         except Exception:
             pass
-    return _template_answer(question, stats), "template"
+    return _template_answer(question, stats, cell), "template"
