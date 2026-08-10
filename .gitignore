@@ -42,3 +42,6 @@ outputs/
 outputs_env/
 outputs_gpu/
 outputs_tabonly/
+
+# Scratch files
+tmp/
