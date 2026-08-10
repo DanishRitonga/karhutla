@@ -64,16 +64,16 @@ Predictions -> Region Summary -> [Template / LLM] -> JSON -> Frontend
 Frontend tidak pernah menghitung ringkasan sendiri, cuma menampilkan field
 `summary` / `answer`. Dua mode, otomatis switch:
 
-- **Tanpa `ANTHROPIC_API_KEY`** (default): teks disusun dari template yang
+- **Tanpa `OPENAI_API_KEY`** (default): teks disusun dari template yang
   dibangun dari angka region-summary asli — deterministik, selalu akurat
   terhadap data, tidak butuh network/API key.
-- **Dengan `ANTHROPIC_API_KEY`**: teks natural dari LLM, dengan
-  region-summary sebagai satu-satunya konteks yang diberikan ke model
-  (supaya tidak mengarang angka). Kalau panggilan API gagal (rate limit,
-  network), otomatis fallback ke template — endpoint tidak pernah error
-  ke frontend karena ini.
+- **Dengan `OPENAI_API_KEY`**: teks natural dari OpenAI, dengan
+  region-summary sebagai konteks dan RAG aktif untuk dokumen di
+  `./rag/context`.
+  Kalau panggilan API gagal (rate limit, network), otomatis fallback ke
+  template — endpoint tidak pernah error ke frontend karena ini.
 
-Set `ANTHROPIC_API_KEY` di `.env` untuk mengaktifkan mode LLM.
+Set `OPENAI_API_KEY` di `.env` untuk mengaktifkan mode LLM / RAG.
 
 ## Testing
 

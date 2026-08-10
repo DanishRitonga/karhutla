@@ -22,6 +22,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "${SCRIPT_DIR}/../backend" && pwd)"
 TMP_DIR="$(mktemp -d)"
 DRY_RUN=0
+# HF git-over-HTTPS auth accepts the token as password with the *user's*
+# username (NOT a literal "user"); defaults to the repo owner.
+HF_USERNAME="${HF_USERNAME:-danishritonga}"
 
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
 
@@ -30,7 +33,7 @@ trap cleanup EXIT
 
 if [[ -n "${HF_TOKEN:-}" ]]; then
     # Embed the token in the remote so `git push` needs no extra credentials.
-    PUSH_URL="https://user:${HF_TOKEN}@huggingface.co/spaces/${SPACE_REPO}"
+    PUSH_URL="https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${SPACE_REPO}"
 else
     PUSH_URL="${SPACE_URL}"
 fi

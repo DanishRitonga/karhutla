@@ -5,10 +5,10 @@ pandas>=2.0
 pyarrow>=14.0
 huggingface_hub>=0.23
 python-dotenv>=1.0
+pypdf
 
-# opsional -- hanya dibutuhkan kalau ANTHROPIC_API_KEY diisi untuk AI Weekly
-# Insight & Ask AI. Tanpa ini pun kedua endpoint tetap jalan (mode template).
-anthropic>=0.40
+# opsional -- hanya dibutuhkan kalau OPENAI_API_KEY diisi untuk AI Weekly
+# Insight & Ask AI melalui layer RAG di ./rag.
 
 # dev/test only
 pytest>=8.0

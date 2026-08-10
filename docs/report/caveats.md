@@ -102,3 +102,23 @@ expected performance.
 - LLM/agentic layer (Phase-5 optional) is excluded from the core science and evaluated
   separately (citation precision + action clarity) — no leakage into the prediction pipeline.
 - Study area is Riau only; cross-province generalization (Sumsel, Kalbar) is untested.
+
+## 9. Weather-forecast caveat: ERA5-Land HOURLY flux bug (design-log §3)
+
+GEE's `ECMWF/ERA5_LAND/HOURLY` stores `surface_solar_radiation_downwards` (ssrd) and
+`total_precipitation` (tp) as **cumulative-since-midnight** values, not per-hour. The original
+ingest summed 24 hourly images → over-counted ssr ~16× and tp ~12× (tensor ch6 ssr median
+3.33e8 J/m²/day ≈ 3854 W/m² daily mean, physically impossible; verified correct via
+`ECMWF/ERA5_LAND/DAILY_AGGR`: ssr 2.049e7 J/m², tp 4.71e-3 m/day on 2019-09-23).
+
+**Impact + handling:**
+- **Fire-risk model unaffected** (z-scored channels; relative signal preserved — PR-AUC 0.712 stands).
+- **Weather LLM context**: `solar_wm2` removed from emission — `scripts/generate_weather.py`
+  now emits only 5 derived features (temp_c, rh_pct, wind_ms, precip_mm, soil_moisture_pct) +
+  wind_dir; `precip_mm` comes from CHIRPS (correct), never ERA5 tp.
+- **Presentable weather MAE** (vs persistence): report only the 7 sound channels
+  (t2m 0.637 vs 0.739 K, d2m 0.429 vs 0.490, u10 0.530 vs 0.638, v10 0.477 vs 0.530,
+  swvl1 0.0179 vs 0.0196, swvl2 0.0159 vs 0.0179, chirps 8.07 vs 10.34 mm/day). Drop ssr/tp
+  rows (5.62e7 J/m² / 0.0717 m/day) — they reflect the buggy cumulative-scale, not skill.
+- No re-ingest / no retrain / no tensor rebuild: regression checkpoints + z-score norm_stats
+  are reused as-is.

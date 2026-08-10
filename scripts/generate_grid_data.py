@@ -91,23 +91,17 @@ def rows_rle(cells: pd.DataFrame, cols: int) -> list:
     """Encode is_riau cells as [[r, [[c0, c1], ...]], ...] column runs."""
     riau = cells[cells["is_riau"]].sort_values(["row", "col"])
     runs: list = []
-    cur_row, run_start, run_end = None, None, None
     for _, c in riau.iterrows():
         r = int(c["row"])
         col = int(c["col"])
-        if r != cur_row:
-            if cur_row is not None:
-                runs.append([cur_row, [[run_start, run_end]]])
-            cur_row = r
-            run_start = run_end = col
+        if not runs or runs[-1][0] != r:
+            runs.append([r, [[col, col]]])
             continue
-        if col == run_end + 1:
-            run_end = col
+        last_run = runs[-1][1][-1]
+        if col == last_run[1] + 1:
+            last_run[1] = col
         else:
-            runs[-1][1].append([run_start, run_end])
-            run_start = run_end = col
-    if cur_row is not None:
-        runs.append([cur_row, [[run_start, run_end]]])
+            runs[-1][1].append([col, col])
     return runs
 
 

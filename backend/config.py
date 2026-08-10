@@ -6,6 +6,9 @@ tanpa ubah kode.
 """
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
@@ -25,13 +28,14 @@ HF_TOKEN = os.getenv("HF_TOKEN", "")                     # perlu kalau repo priv
 USE_REAL_DATA = bool(HF_DATASET_REPO)
 USE_REAL_MODEL = bool(HF_MODEL_REPO)
 
-# ── LLM (opsional) untuk AI Weekly Insight & Ask AI ──────────────────────
+# ── LLM / RAG (opsional) untuk AI Weekly Insight & Ask AI ───────────────
 # Kosong = pakai ringkasan berbasis template (tetap akurat, deterministik,
-# tanpa perlu API key). Isi ANTHROPIC_API_KEY untuk ringkasan/jawaban dalam
-# bahasa natural yang dihasilkan LLM, dengan fallback otomatis ke template
+# tanpa perlu API key). Isi OPENAI_API_KEY untuk ringkasan/jawaban dalam
+# bahasa natural yang dihasilkan OpenAI, dengan fallback otomatis ke template
 # kalau panggilan API gagal (rate limit, network, dst).
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-USE_LLM_SUMMARY = bool(ANTHROPIC_API_KEY)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+USE_LLM_SUMMARY = bool(OPENAI_API_KEY)
 
 # Kalau diset, endpoint admin butuh header X-Admin-Key yang cocok.
 # Kosong = endpoint tetap terbuka (nyaman untuk demo/dev), TAPI harus diisi
