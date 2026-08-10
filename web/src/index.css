@@ -1,3 +1,401 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ==========================================================================
+   Karhutla Early Warning — sistem token
+   Aturan warna: hue hangat HANYA untuk skala risiko. Chrome antarmuka
+   seluruhnya netral dingin, supaya satu-satunya yang "panas" di layar
+   adalah peta.
+   ========================================================================== */
+
+:root {
+  /* Permukaan — abu kehijauan, mengikuti warna kertas peta tutupan lahan */
+  --paper: #e7eae5;
+  --surface: #f5f6f3;
+  --surface-sunk: #dde2da;
+
+  /* Tinta */
+  --ink: #161a17;
+  --ink-mute: #5c645d;
+  --ink-faint: #8b938c;
+
+  /* Garis — semuanya 1px, tidak ada shadow di mana pun */
+  --rule: #c6ccc4;
+  --rule-strong: #98a29a;
+
+  /* Skala risiko: ColorBrewer YlOrRd 4-class. Sekuensial dan aman untuk
+     deuteranopia — beda dengan ramp hijau→merah yang hue-nya melompat. */
+  --r1: #ffffb2; /* rendah        p <= 0.30 */
+  --r2: #fecc5c; /* sedang   0.30 < p <= 0.50 */
+  --r3: #fd8d3c; /* tinggi   0.50 < p <= 0.72 */
+  --r4: #e31a1c; /* sangat tinggi  p > 0.72 */
+
+  --font-display: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+@media (max-width: 900px), (max-height: 480px) {
+  body {
+    overflow: auto;
+  }
+}
+
+/* Tidak ada radius di mana pun: data dasarnya raster 5 km, chrome-nya ikut. */
+button,
+input {
+  font: inherit;
+  color: inherit;
+  border-radius: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* --- Tipografi utilitas ------------------------------------------------- */
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* --- Kerangka -----------------------------------------------------------
+   Dikunci ke tinggi viewport: header dan strip tetap, peta menyusut mengikuti
+   ruang sisa, dan rail kanan yang scroll sendiri kalau isinya kepanjangan.
+   Halaman tidak pernah ikut scroll di layar laptop. */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.shell {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 20px 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pagehead {
+  flex: none;
+  padding: 18px 0 12px;
+  border-bottom: 1px solid var(--rule-strong);
+  margin-bottom: 12px;
+}
+
+.pagehead h1 {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.pagehead p {
+  margin: 4px 0 0;
+  max-width: 78ch;
+  color: var(--ink-mute);
+}
+
+.layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(272px, 28vw, 400px);
+  gap: 14px;
+}
+
+.pagefoot {
+  flex: none;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+
+.mappanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mapbody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mapwrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Peta mengisi TINGGI yang tersedia lalu lebarnya menyesuaikan rasio —
+   kebalikan dari pola biasa (lebar penuh, tinggi ikut), yang di layar
+   pendek justru memaksa halaman scroll. */
+.mapwrap svg {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+}
+
+.legendwrap {
+  flex: none;
+  width: min(100%, 420px);
+  margin: 0 auto;
+}
+
+.rail {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+}
+
+.panel + .panel {
+  border-top: none;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.panel-body {
+  padding: 12px 13px;
+}
+
+/* --- Layar pendek: rapatkan sebelum sesuatu terpotong -------------------
+   1366x768 pada skala 125% menyisakan tinggi CSS sekitar 500 px. */
+
+@media (max-height: 900px) {
+  .pagehead {
+    padding: 13px 0 9px;
+    margin-bottom: 10px;
+  }
+  .pagehead h1 {
+    font-size: 20px;
+  }
+  .pagehead p {
+    font-size: 12.5px;
+  }
+  .pagefoot {
+    display: none;
+  }
+  .panel-body {
+    padding: 10px 12px;
+  }
+  .row {
+    padding: 5px 0;
+  }
+}
+
+@media (max-height: 660px) {
+  .pagehead p {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .shell {
+    padding-bottom: 10px;
+  }
+  .panel-head {
+    padding: 6px 11px;
+  }
+}
+
+/* --- Layar sempit atau sangat pendek: kembali ke aliran normal ---------- */
+
+@media (max-width: 900px), (max-height: 480px) {
+  .app {
+    height: auto;
+    min-height: 100dvh;
+  }
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rail {
+    overflow: visible;
+  }
+  .mapwrap svg {
+    height: auto;
+    width: 100%;
+    max-height: 70vh;
+  }
+  .pagefoot {
+    display: block;
+  }
+}
+
+/* --- Status strip: elemen tanda #1 -------------------------------------- */
+
+.strip {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+}
+
+.strip-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 7px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 28px;
+  align-items: center;
+}
+
+.strip b {
+  font-weight: 400;
+  color: var(--ink-faint);
+  margin-right: 7px;
+}
+
+.strip .dot {
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+  margin-right: 7px;
+  vertical-align: 1px;
+}
+
+/* --- Baris data --------------------------------------------------------- */
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row-label {
+  color: var(--ink-mute);
+}
+
+/* --- Kontrol ------------------------------------------------------------ */
+
+.field {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  padding: 7px 10px;
+}
+
+.field::placeholder {
+  color: var(--ink-faint);
+}
+
+.btn {
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 7px 16px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  background: var(--surface-sunk);
+  border-color: var(--rule-strong);
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+
+/* --- Tag provenance ----------------------------------------------------- */
+
+.tag {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+.tag--warn {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: var(--r1);
+}
+
+/* --- Peta --------------------------------------------------------------- */
+
+.map-cell {
+  cursor: pointer;
+}
+
+.map-cell:hover {
+  stroke: var(--ink);
+  stroke-width: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
