@@ -48,14 +48,14 @@ class GeeConfig:
     grid_meta: Path = Path("data/output/grid/grid_meta.json")
     chirps_dir: Path = Path("data/output/chirpsv3")
     s1_dir: Path = Path("data/output/sentinel1")
-    chirps_scale: int = 5566
-    s1_scale: int = 100
-    chirps_chunk_days: int = 31
-    s1_chunk_days: int = 45
     era5land_dir: Path = Path("data/output/era5land")
     dynamic_world_dir: Path = Path("data/output/dynamic_world")
+    chirps_scale: int = 5566
+    s1_scale: int = 100
     era5land_scale: int = 9000
     dynamic_world_scale: int = 100
+    chirps_chunk_days: int = 31
+    s1_chunk_days: int = 45
     era5land_chunk_days: int = 31
     dynamic_world_chunk_days: int = 31
     feature_chunk_size: int = 2000
@@ -168,20 +168,41 @@ class GeeClient:
             )
             sys.exit(2)
 
-    def reduce_regions(self, image, collection, reducer, scale: int):
+    def reduce_regions(self, image, collection, reducer, scale: int,
+                       timeout_s: int = 120):
+        """Run reduceRegions with a hard wall-clock timeout per attempt.
+        
+        ``fc.getInfo()`` does not reliably honour ``ee.data.setDeadline``;
+        each call is run in a daemon thread with a ``result(timeout)`` cap.
+        Hung threads are abandoned (``shutdown(wait=False)``) so the ingest
+        loop can proceed to the next month.
+        """
+        import concurrent.futures
+
         ee = self.ee
         last_err = None
         for attempt in range(3):
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             try:
                 fc = image.reduceRegions(
                     collection=collection, reducer=reducer, scale=scale
                 )
-                info = fc.getInfo()
+                future = pool.submit(fc.getInfo)
+                info = future.result(timeout=timeout_s)
+                pool.shutdown(wait=True)
                 return info
+            except concurrent.futures.TimeoutError:
+                last_err = Exception(f"getInfo timed out after {timeout_s}s")
+                pool.shutdown(wait=False)
+                logger.warning("reduceRegions attempt %d timed out after %ds",
+                               attempt + 1, timeout_s)
             except Exception as exc:
                 last_err = exc
+                pool.shutdown(wait=True)
                 logger.warning("reduceRegions attempt %d failed: %s", attempt + 1, exc)
-                time.sleep(3 * (attempt + 1))
+            sleep = 5 * (attempt + 1)
+            logger.info("retrying in %ds ...", sleep)
+            time.sleep(sleep)
         raise RuntimeError(f"reduceRegions failed after 3 attempts: {last_err}")
 
 
