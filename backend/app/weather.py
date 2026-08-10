@@ -27,13 +27,14 @@ _TTL_SECONDS = int(os.getenv("WEATHER_CACHE_TTL", "600"))
 _REQUIRED_COLUMNS = {"cell_idx", "day", "channel", "value"}
 
 # Nama channel yang dibaca dari parquet + unit untuk ditampilkan ke LLM.
+# (solar_wm2 dihapus: ERA5-Land HOURLY ssrd adalah kumulatif-sejak-tengah-malam,
+#  nilainya tidak dapat disajikan — lihat catatan caveats.)
 _CHANNEL_LABELS = {
     "temp_c": "suhu",
     "rh_pct": "kelembaban",
     "wind_ms": "angin",
     "precip_mm": "hujan",
     "soil_moisture_pct": "kelembaban tanah",
-    "solar_wm2": "radiasi matahari",
 }
 
 _cache: dict = {"forecast": None, "wind_dir": None, "loaded_at": 0.0}

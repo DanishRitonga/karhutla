@@ -9,8 +9,10 @@ channel, same 158-feature tabular extraction as the fire-risk model).
 Output parquet columns: {cell_idx, day, channel, value} where ``cell_idx`` is
 the backend grid id ``RIAU_{r}_{c}``. Channels are **LLM-friendly derived
 features** (converted from the raw sensor forecasts): temp_c (°C), rh_pct (%),
-wind_ms (m/s), wind_dir (cardinal), precip_mm (mm/day), soil_moisture_pct (%),
-solar_wm2 (daily-mean W/m2).
+wind_ms (m/s), wind_dir (cardinal), precip_mm (mm/day), soil_moisture_pct (%).
+``solar_wm2`` is intentionally NOT emitted: ERA5-Land HOURLY ``ssrd`` is
+cumulative-since-midnight in GEE, so a daily mean in W/m2 is not derivable
+from the ingested data without re-ingest (see docs/report caveats).
 
 Usage::
 
@@ -91,14 +93,14 @@ def main() -> None:
 
     # Convert raw forecasts into LLM-friendly derived features. The models
     # predict the raw physical channels; here we derive human-readable
-    # quantities (Celsius, %, mm/day, W/m2, cardinal wind) so the agent's
-    # prompt reads naturally. Raw-only channels not surfaced to the LLM:
-    # d2m, swvl2, tp (redundant once RH / soil% / precip_mm exist).
+    # quantities (Celsius, %, mm/day, cardinal wind) so the agent's prompt
+    # reads naturally. Raw-only channels not surfaced to the LLM: d2m, swvl2,
+    # tp (redundant once RH / soil% / precip_mm exist) and ssr (cumulative
+    # since-midnight in the GEE HOURLY product — not presentable).
     t2m = raw["t2m"]
     d2m = raw["d2m"]
     u10, v10 = raw["u10"], raw["v10"]
     swvl1 = raw["swvl1"]
-    ssr = raw["ssr"]
     chirps = raw["chirps_precip"]
 
     rh = 100.0 * np.exp((17.625 * (d2m - 273.15)) / (243.04 + (d2m - 273.15))) / \
@@ -114,7 +116,6 @@ def main() -> None:
         "wind_ms": wind_ms,
         "precip_mm": chirps,
         "soil_moisture_pct": swvl1 * 100.0,
-        "solar_wm2": ssr / 86400.0,
     }
 
     frames = []
