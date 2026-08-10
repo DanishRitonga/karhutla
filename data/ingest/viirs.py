@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import logging
 import sys
 import time
@@ -22,7 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import requests
-import shapely
+from pyproj import Transformer
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("viirs")
@@ -70,38 +71,45 @@ def _download(url, dest, timeout=600, retries=3):
 # --------------------------------------------------------------------------- #
 
 
-def _spatial_join(detections, grid):
-    logger.info("spatial join: %d detections -> grid", len(detections))
-    riau_bbox = (
-        grid["lon"].min(), grid["lat"].min(),
-        grid["lon"].max(), grid["lat"].max(),
-    )
-    xmin, ymin, xmax, ymax = riau_bbox
-    det = detections[
-        (detections["lon"] >= xmin) & (detections["lon"] <= xmax) &
-        (detections["lat"] >= ymin) & (detections["lat"] <= ymax)
-    ].copy()
-    logger.info("  bbox filter: %d -> %d", len(detections), len(det))
+def _spatial_join(detections, grid, grid_meta):
+    """Assign each hotspot detection to a grid cell.
 
-    lats, lons = det["lat"].to_numpy(), det["lon"].to_numpy()
-    n_det = len(det)
-    cell_idx = np.full(n_det, -1, dtype=np.int64)
-    min_lat, max_lat = grid["lat"].min(), grid["lat"].max()
-    min_lon, max_lon = grid["lon"].min(), grid["lon"].max()
-    lat_ok = (lats >= min_lat) & (lats <= max_lat)
-    lon_ok = (lons >= min_lon) & (lons <= max_lon)
-    ok = lat_ok & lon_ok
-    logger.info("  in-bbox: %d / %d (dropping %d out-of-bbox)", ok.sum(), n_det, (~ok).sum())
+    This uses the SAME projected-CRS floor-division binning that built the
+    grid in the first place (see grid_definition.EqualAreaGrid.assign_cell_idx,
+    also reused as-is by extract_viirs/real_data.py's ``grid.assign_cell_idx``).
+    For a regular axis-aligned grid this is an *exact* point-in-cell test, not
+    an approximation, computed in O(n) with no per-point search.
 
-    cells = grid[["cell_idx", "lon", "lat", "row", "col"]].to_numpy()
-    for i in np.where(ok)[0]:
-        dist = (cells[:, 1] - lons[i]) ** 2 + (cells[:, 2] - lats[i]) ** 2
-        cell_idx[i] = int(cells[dist.argmin(), 0])
+    This replaces the previous nearest-centroid-in-degrees approach. Nearest
+    centroid in raw lon/lat is not equivalent to point-in-cell in the
+    projected Albers space the grid actually lives in: 1 degree of longitude
+    and 1 degree of latitude do not cover the same ground distance, and that
+    mismatch grows with distance from the projection's centre
+    (lon_0=113, lat_0=2) -- i.e. worst exactly at Riau's east/west edges,
+    which is where border-cell assignment matters most for the k=2 labels.
+    """
+    logger.info("spatial join: %d detections -> grid (Albers floor-division, exact)", len(detections))
 
-    det["cell_idx"] = cell_idx
+    transformer = Transformer.from_crs(4326, grid_meta["crs"], always_xy=True)
+    x, y = transformer.transform(detections["lon"].to_numpy(), detections["lat"].to_numpy())
+
+    cell_size = grid_meta["cell_size_m"]
+    x0, y0 = grid_meta["x0"], grid_meta["y0"]
+    cols, rows = grid_meta["cols"], grid_meta["rows"]
+
+    col = np.floor((x - x0) / cell_size).astype(np.int64)
+    row = np.floor((y - y0) / cell_size).astype(np.int64)
+    valid = (col >= 0) & (col < cols) & (row >= 0) & (row < rows)
+
+    det = detections.copy()
+    det["cell_idx"] = np.where(valid, row * cols + col, -1)
+    n_before = len(det)
     det = det[det["cell_idx"] >= 0]
+    logger.info("  in-grid-bbox: %d / %d (dropping %d out-of-bbox, DROPPED not clipped)",
+                len(det), n_before, n_before - len(det))
+
+    det = det[det["cell_idx"].isin(grid["cell_idx"])]
     hits = det.groupby(["cell_idx", "date"]).size().reset_index(name="count")
-    hits = hits[hits["cell_idx"].isin(grid["cell_idx"])]
     return hits
 
 
@@ -155,8 +163,17 @@ def _stats(hits, labels, year):
 # --------------------------------------------------------------------------- #
 
 
-def _load_year(year, cache_dir, grid, keep_raw=False):
-    """Download + parse FIRMS CSV for one year, return (hits_df, raw_df)."""
+def _load_year(year, cache_dir, grid, grid_meta, keep_raw=False, raw_csv_dir=None):
+    """Download + parse FIRMS CSV for one year, return (hits_df, raw_df).
+
+    If ``raw_csv_dir`` is given, also writes the untouched per-country CSV
+    (original FIRMS column names: latitude/longitude/acq_date/confidence/...)
+    to ``raw_csv_dir/{year}/viirs-snpp_{year}_Indonesia.csv`` -- exactly the
+    file/path pattern extract_viirs/real_data.py expects at
+    ``real_data/viirs-snpp/{year}/viirs-snpp_{year}_Indonesia.csv``. This
+    lets both team members' pipelines share one FIRMS download instead of
+    each re-implementing "fetch + extract Indonesia.csv" independently.
+    """
     url = URL.format(year=year)
     zip_path = cache_dir / f"viirs-snpp_{year}_all_countries.zip"
     _download(url, zip_path)
@@ -175,6 +192,13 @@ def _load_year(year, cache_dir, grid, keep_raw=False):
         logger.warning("corrupt zip: %s — removing and exiting (re-run to re-download)", zip_path.name)
         zip_path.unlink()
         sys.exit(1)
+
+    if raw_csv_dir is not None:
+        year_dir = raw_csv_dir / str(year)
+        year_dir.mkdir(parents=True, exist_ok=True)
+        raw_csv_path = year_dir / f"viirs-snpp_{year}_Indonesia.csv"
+        raw_csv_path.write_bytes(raw)
+        logger.info("  saved raw CSV for extract_viirs/real_data.py: %s", raw_csv_path)
 
     if not keep_raw:
         zip_path.unlink()
@@ -195,7 +219,7 @@ def _load_year(year, cache_dir, grid, keep_raw=False):
         logger.info("  FRP (MW): min=%.1f p25=%.1f p50=%.1f p75=%.1f p90=%.1f p95=%.1f max=%.1f",
                     q.iloc[0], q.iloc[1], q.iloc[2], q.iloc[3], q.iloc[4], q.iloc[5], q.iloc[6])
 
-    hits = _spatial_join(df, grid)
+    hits = _spatial_join(df, grid, grid_meta)
     return hits, df
 
 
@@ -214,8 +238,13 @@ def main():
     parser.add_argument("--cache-dir", type=Path, default=Path("data/raw/viirs"))
     parser.add_argument("--out-dir", type=Path, default=Path("data/output/viirs"))
     parser.add_argument("--grid-csv", type=Path, default=Path("data/output/grid/grid_cells.csv"))
+    parser.add_argument("--grid-meta", type=Path, default=None,
+                         help="grid_meta.json (default: grid_meta.json next to --grid-csv)")
     parser.add_argument("--land-cells", type=Path, default=None,
-                        help="CSV of land cell_idx (coverage union used by default)")
+                        help="CSV of land cell_idx (CHIRPS coverage used by default)")
+    parser.add_argument("--raw-csv-dir", type=Path, default=None,
+                         help="also save the untouched per-year FIRMS Indonesia CSV here "
+                              "(e.g. real_data/viirs-snpp) for extract_viirs/real_data.py to reuse")
     args = parser.parse_args()
 
     if args.year is not None:
@@ -229,6 +258,11 @@ def main():
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     grid = pd.read_csv(args.grid_csv)
+    grid_meta_path = args.grid_meta or (args.grid_csv.parent / "grid_meta.json")
+    grid_meta = json.loads(grid_meta_path.read_text(encoding="utf-8"))
+    logger.info("grid_meta: %s (cell_size=%dm, %dx%d cells, crs=%s...)",
+                grid_meta_path, grid_meta["cell_size_m"], grid_meta["cols"], grid_meta["rows"],
+                grid_meta["crs"][:40])
 
     # Target cells: all land cells (outside Riau included) or Riau only.
     if args.land_only:
@@ -237,29 +271,11 @@ def main():
             target_cells = land["cell_idx"].tolist()
             logger.info("using %d land cells from %s", len(target_cells), args.land_cells)
         else:
-            target_union = set()
-            coverage_paths = [
-                (Path("data/output/era5land"), "era5land_*.csv", "ERA5-Land"),
-                (Path("data/output/dynamic_world"), "dynamic_world_*.csv", "Dynamic World"),
-                (Path("data/output/chirpsv3"), "chirps_v3sat_*.csv", "CHIRPS"),
-            ]
-            source_name = "grid"
-            for base_dir, pattern, label in coverage_paths:
-                files = sorted(base_dir.glob(pattern))
-                if not files:
-                    continue
-                for f in files:
-                    target_union.update(pd.read_csv(f, usecols=["cell_idx"]).cell_idx.unique())
-                source_name = label
-                break
-
-            if target_union:
-                target_cells = sorted(target_union)
-                logger.info("land cells (%s union): %d", source_name, len(target_cells))
-            else:
-                # If no feature files exist yet, default to the full grid.
-                target_cells = sorted(grid["cell_idx"].unique())
-                logger.info("land cells (grid fallback): %d", len(target_cells))
+            chirps_union = set()
+            for f in sorted(Path("data/output/chirpsv3").glob("chirps_v3sat_*.csv")):
+                chirps_union.update(pd.read_csv(f, usecols=["cell_idx"]).cell_idx.unique())
+            target_cells = sorted(chirps_union)
+            logger.info("land cells (CHIRPS union): %d", len(target_cells))
     else:
         target_cells = grid[grid["is_riau"]]["cell_idx"].tolist()
     riau_lookup = grid[["cell_idx", "row", "col"]].drop_duplicates()
@@ -268,7 +284,8 @@ def main():
     hits_by_year: dict[int, pd.DataFrame] = {}
     for yr in years:
         logger.info("--- VIIRS %d ---", yr)
-        hits_by_year[yr], _ = _load_year(yr, args.cache_dir, grid, keep_raw=args.keep_raw)
+        hits_by_year[yr], _ = _load_year(yr, args.cache_dir, grid, grid_meta,
+                                          keep_raw=args.keep_raw, raw_csv_dir=args.raw_csv_dir)
 
     # Build labels per year using Y + Y+1 hotspots for boundary windows.
     for i, yr in enumerate(years):

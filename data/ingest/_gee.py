@@ -3,12 +3,12 @@
 Private module — imported by ``era5land.py`` and ``dynamic_world.py``.
 
 Provides:
-    * ``GeeConfig``         — dataclass with grid paths, project, sampling scales.
-    * ``RiauGridCells``     — loads the fixed 5 km equal-area grid as a GEE
-                                                         FeatureCollection.
-    * ``GeeClient``         — Earth Engine auth, initialisation, reduceRegions.
-    * ``ALBERS_ID_AEAC_PROJ4`` — proj4 string shared with grid_definition.py.
-    * ``_iter_months``, ``_iter_windows`` — calendar iteration helpers.
+* ``GeeConfig``         — dataclass with grid paths, project, sampling scales.
+* ``RiauGridCells``     — loads the fixed 5 km equal-area grid as a GEE
+                            FeatureCollection.
+* ``GeeClient``         — Earth Engine auth, initialisation, reduceRegions.
+* ``ALBERS_ID_AEAC_PROJ4`` — proj4 string shared with grid_definition.py.
+* ``_iter_months``, ``_iter_windows`` — calendar iteration helpers.
 """
 
 from __future__ import annotations
@@ -46,6 +46,12 @@ class GeeConfig:
     project: str | None = None
     grid_csv: Path = Path("data/output/grid/grid_cells.csv")
     grid_meta: Path = Path("data/output/grid/grid_meta.json")
+    chirps_dir: Path = Path("data/output/chirpsv3")
+    s1_dir: Path = Path("data/output/sentinel1")
+    chirps_scale: int = 5566
+    s1_scale: int = 100
+    chirps_chunk_days: int = 31
+    s1_chunk_days: int = 45
     era5land_dir: Path = Path("data/output/era5land")
     dynamic_world_dir: Path = Path("data/output/dynamic_world")
     era5land_scale: int = 9000
