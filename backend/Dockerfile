@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod +x /app/start.sh
+RUN chmod +x /app/start.sh /app/prepare.sh
 
 ENV PORT=7860
 EXPOSE 7860
