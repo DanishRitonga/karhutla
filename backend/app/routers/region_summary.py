@@ -15,7 +15,11 @@ def region_summary(day: int = Query(1, ge=1, le=7)):
     predicted_hotspots = sum(1 for r in rows if r["level"] == "vhigh")
     # Pakai `stats` yang sudah dihitung di atas -- weekly_insight_from_stats
     # TIDAK memanggil ulang predict_day()/summarize() (lihat app/ai_summary.py).
+<<<<<<< HEAD
+    summary_text, _source = weekly_insight_from_stats(stats)
+=======
     summary_text, _source = weekly_insight_from_stats(day, stats)
+>>>>>>> origin/master
 
     return {
         "day": day,

@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.env
 
 # Secrets — never commit tokens
 .env
@@ -15,6 +16,8 @@ data/output/chirpsv3/
 data/output/sentinel1/
 data/output/sentinel1_filled/
 data/output/viirs/
+data/output/dynamic_world/
+data/output/era5land/
 
 # Raw VIIRS downloads (1.7 GB zips) + extracted FIRMS CSVs
 data/raw/
