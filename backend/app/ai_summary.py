@@ -221,6 +221,11 @@ def _call_llm(system_context: str, instruction: str) -> str:
 def _call_rag_answer(question: str, stats: dict) -> tuple[str, str]:
     client = _build_openai_client()
     data_context = _build_context(stats)
+
+    from app.weather import build_weather_context
+
+    weather_context = build_weather_context()
+
     regulation_context = _retrieve_regulation_context(
         question=question,
         stats=stats,
@@ -228,10 +233,14 @@ def _call_rag_answer(question: str, stats: dict) -> tuple[str, str]:
         top_k=3,
     )
 
-    system_context = (
-        f"Data backend:\n{data_context}\n\n"
-        f"Konteks regulasi (jika relevan):\n{regulation_context or 'Tidak ada konteks regulasi yang ditemukan.'}"
+    parts = [f"Data backend:\n{data_context}"]
+    if weather_context:
+        parts.append(f"Konteks cuaca:\n{weather_context}")
+    parts.append(
+        f"Konteks regulasi (jika relevan):\n"
+        f"{regulation_context or 'Tidak ada konteks regulasi yang ditemukan.'}"
     )
+    system_context = "\n\n".join(parts)
     answer = _call_llm(system_context=system_context, instruction=question)
     return answer, "llm"
 
