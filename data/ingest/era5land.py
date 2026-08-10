@@ -3,8 +3,6 @@
 Pulls daily ERA5-Land summaries from GEE and writes per-month CSVs
 (``data/output/era5land/era5land_YYYYMM.csv``).
 
-<<<<<<< HEAD
-=======
 Aggregation semantics (per design log §3):
   * **state** bands (temperature, dewpoint, wind, soil moisture) -> daily mean
   * **flux/accumulation** bands (``total_precipitation``, 
@@ -12,7 +10,6 @@ Aggregation semantics (per design log §3):
     images. Taking the mean here would under-represent the daily total by a
     factor of 24.
 
->>>>>>> origin/master
 Run (from project root):
 
     uv run --python 3.12 python data/ingest/era5land.py \
@@ -52,13 +49,8 @@ except ModuleNotFoundError:
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("era5land")
 
-<<<<<<< HEAD
-=======
 # Accumulation bands: daily total = sum of the 24 hourly values.
 FLUX_BANDS = ["total_precipitation", "surface_solar_radiation_downwards"]
-
->>>>>>> origin/master
-
 def _parse_stacked_band(name: str) -> tuple[str, str] | None:
     """Extract (YYYYMMDD, field) from a stacked band name.
 
@@ -105,21 +97,13 @@ class Era5LandIngester:
         bbox = self.cells.bounds_geometry()
         hourly = ee.ImageCollection(self.COLLECTION).filterBounds(bbox)
 
-<<<<<<< HEAD
-=======
         state_bands = [b for b in self.bands if b not in FLUX_BANDS]
         flux_bands = [b for b in self.bands if b in FLUX_BANDS]
 
->>>>>>> origin/master
         daily_images = []
         cur = month_start
         while cur <= month_end:
             nxt = cur + timedelta(days=1)
-<<<<<<< HEAD
-            daily = hourly.filterDate(cur.isoformat(), nxt.isoformat()).select(self.bands).mean()
-            rename_to = [f"{cur:%Y%m%d}_{band}" for band in self.bands]
-            daily_images.append(daily.rename(rename_to))
-=======
             day_ic = hourly.filterDate(cur.isoformat(), nxt.isoformat())
             day_img = None
             if state_bands:
@@ -129,7 +113,6 @@ class Era5LandIngester:
                 day_img = flux_img if day_img is None else day_img.addBands(flux_img)
             rename_to = [f"{cur:%Y%m%d}_{band}" for band in self.bands]
             daily_images.append(day_img.rename(rename_to))
->>>>>>> origin/master
             cur = nxt
 
         return ee.ImageCollection(daily_images).toBands()
@@ -196,9 +179,6 @@ class Era5LandIngester:
         self.config.era5land_dir.mkdir(parents=True, exist_ok=True)
         written = []
         for month_start, month_end in _iter_months(start, end):
-<<<<<<< HEAD
-            df = self._pull(month_start, month_end)
-=======
             try:
                 df = self._pull(month_start, month_end)
             except Exception as exc:  # noqa: BLE001
@@ -208,7 +188,6 @@ class Era5LandIngester:
                     exc,
                 )
                 continue
->>>>>>> origin/master
             if df is None or df.empty:
                 continue
 

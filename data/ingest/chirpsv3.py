@@ -15,18 +15,31 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from data.ingest._gee import (
-    GeeClient,
-    GeeConfig,
-    RiauGridCells,
-    _iter_months,
-)
+try:
+    from data.ingest._gee import (
+        GeeClient,
+        GeeConfig,
+        RiauGridCells,
+        _iter_months,
+    )
+except ModuleNotFoundError:
+    # Allow direct execution via absolute/relative script path.
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from data.ingest._gee import (
+        GeeClient,
+        GeeConfig,
+        RiauGridCells,
+        _iter_months,
+    )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("chirpsv3")
